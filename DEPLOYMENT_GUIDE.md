@@ -60,7 +60,7 @@ This guide covers deploying Frontbench to production:
      ```
      PORT=3001
      NODE_ENV=production
-     MONGODB_URI=mongodb+srv://bhaskarkeelu92_db_user:SbyTKO0SbPB9hTgP@cluster0.q8f0en4.mongodb.net/
+     MONGODB_URI=your-mongodb-connection-string-here
      DATABASE_NAME=frontbench-dev
      OPENAI_API_KEY=sk-proj-...
      LANGFUSE_SECRET_KEY=sk-lf-...
