@@ -1,0 +1,16 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+# Redirect all API calls to backend
+[[redirects]]
+  from = "/api/*"
+  to = "https://frontbench-backend.up.railway.app/api/:splat"
+  status = 200
+  force = true
+
+# SPA fallback - serve index.html for all routes
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
