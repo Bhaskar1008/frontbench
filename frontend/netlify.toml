@@ -5,7 +5,7 @@
 # Redirect all API calls to backend
 [[redirects]]
   from = "/api/*"
-  to = "https://frontbench-backend.up.railway.app/api/:splat"
+  to = "https://frontbench-production.up.railway.app/api/:splat"
   status = 200
   force = true
 

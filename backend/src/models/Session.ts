@@ -37,7 +37,6 @@ const SessionSchema = new Schema<ISession>(
       type: String,
       required: true,
       unique: true,
-      index: true,
     },
     fileName: String,
     fileSize: Number,

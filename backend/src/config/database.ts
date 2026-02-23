@@ -13,6 +13,8 @@ const DATABASE_NAME = process.env.DATABASE_NAME || 'frontbench-dev';
 
 if (!MONGODB_URI) {
   console.error('❌ Error: MONGODB_URI is not set in environment variables');
+  console.error('📝 Please set MONGODB_URI in Railway Variables tab');
+  console.error('📝 Go to: Railway → Your Service → Variables → New Variable');
   process.exit(1);
 }
 

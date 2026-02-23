@@ -28,13 +28,11 @@ const TokenUsageSchema = new Schema<ITokenUsage>(
     sessionId: {
       type: String,
       required: true,
-      index: true,
     },
     operation: {
       type: String,
       required: true,
       enum: ['resume-analysis', 'benchmarks', 'trajectory', 'learning-path'],
-      index: true,
     },
     modelName: {
       type: String,

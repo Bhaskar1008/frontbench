@@ -26,12 +26,10 @@ const AuditLogSchema = new Schema<IAuditLog>(
   {
     sessionId: {
       type: String,
-      index: true,
     },
     action: {
       type: String,
       required: true,
-      index: true,
     },
     resource: {
       type: String,
@@ -41,7 +39,6 @@ const AuditLogSchema = new Schema<IAuditLog>(
       type: String,
       required: true,
       enum: ['success', 'error', 'warning'],
-      index: true,
     },
     ipAddress: String,
     userAgent: String,
