@@ -1,5 +1,4 @@
 import OpenAI from 'openai';
-import { Trace } from 'langfuse';
 import { ResumeAnalysis } from './resumeAnalyzer.js';
 import { CareerTrajectory } from './trajectoryService.js';
 import { calculateTokenCost, getCostPer1KTokens } from '../utils/tokenCost.js';
@@ -46,7 +45,7 @@ export async function generateLearningPath(
   analysis: ResumeAnalysis,
   trajectory: CareerTrajectory | undefined,
   openai: OpenAI,
-  trace?: Trace,
+  trace?: any,
   sessionId?: string
 ): Promise<{ learningPath: LearningPath; tokenUsage: any }> {
   const generation = trace?.generation({
@@ -160,7 +159,7 @@ Return a JSON object with this exact structure:
         await TokenUsage.create({
           sessionId,
           operation: 'learning-path',
-          model,
+          modelName: model,
           promptTokens,
           completionTokens,
           totalTokens,

@@ -1,5 +1,4 @@
 import OpenAI from 'openai';
-import { Trace } from 'langfuse';
 import { ResumeAnalysis } from './resumeAnalyzer.js';
 import { calculateTokenCost, getCostPer1KTokens } from '../utils/tokenCost.js';
 import { TokenUsage } from '../models/TokenUsage.js';
@@ -40,7 +39,7 @@ export interface BenchmarkData {
 export async function generateBenchmarks(
   analysis: ResumeAnalysis,
   openai: OpenAI,
-  trace?: Trace,
+  trace?: any,
   sessionId?: string
 ): Promise<{ benchmarks: BenchmarkData; tokenUsage: any }> {
   const generation = trace?.generation({
@@ -133,7 +132,7 @@ Return a JSON object with this exact structure:
         await TokenUsage.create({
           sessionId,
           operation: 'benchmarks',
-          model,
+          modelName: model,
           promptTokens,
           completionTokens,
           totalTokens,

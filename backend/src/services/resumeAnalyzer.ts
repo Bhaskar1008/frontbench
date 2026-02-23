@@ -1,5 +1,4 @@
 import OpenAI from 'openai';
-import { Trace } from 'langfuse';
 import { calculateTokenCost, getCostPer1KTokens } from '../utils/tokenCost.js';
 import { TokenUsage } from '../models/TokenUsage.js';
 
@@ -31,7 +30,7 @@ export interface ResumeAnalysis {
 export async function analyzeResume(
   resumeText: string,
   openai: OpenAI,
-  trace?: Trace,
+  trace?: any,
   sessionId?: string
 ): Promise<{ analysis: ResumeAnalysis; tokenUsage: any }> {
   const generation = trace?.generation({
@@ -109,7 +108,7 @@ Return a JSON object with this exact structure:
         await TokenUsage.create({
           sessionId,
           operation: 'resume-analysis',
-          model,
+          modelName: model,
           promptTokens,
           completionTokens,
           totalTokens,

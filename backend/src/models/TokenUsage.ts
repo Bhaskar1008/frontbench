@@ -5,10 +5,10 @@
 
 import mongoose, { Schema, Document } from 'mongoose';
 
-export interface ITokenUsage extends Document {
+export interface ITokenUsage {
   sessionId: string;
   operation: 'resume-analysis' | 'benchmarks' | 'trajectory' | 'learning-path';
-  model: string;
+  modelName: string;
   promptTokens: number;
   completionTokens: number;
   totalTokens: number;
@@ -36,7 +36,7 @@ const TokenUsageSchema = new Schema<ITokenUsage>(
       enum: ['resume-analysis', 'benchmarks', 'trajectory', 'learning-path'],
       index: true,
     },
-    model: {
+    modelName: {
       type: String,
       required: true,
     },

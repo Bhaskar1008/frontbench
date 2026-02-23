@@ -320,7 +320,7 @@ app.post('/api/benchmarks', async (req, res, next) => {
     if (session.benchmarks) {
       // Return cached benchmarks
       const tokenUsage = await TokenUsage.find({ sessionId, operation: 'benchmarks' });
-      const totalCost = tokenUsage.reduce((sum, usage) => sum + usage.estimatedCost, 0);
+      const totalCost = tokenUsage.reduce((sum, usage: any) => sum + (usage.estimatedCost || 0), 0);
 
       return res.json({
         success: true,
@@ -422,7 +422,7 @@ app.post('/api/trajectory', async (req, res, next) => {
     if (session.trajectory) {
       // Return cached trajectory
       const tokenUsage = await TokenUsage.find({ sessionId, operation: 'trajectory' });
-      const totalCost = tokenUsage.reduce((sum, usage) => sum + usage.estimatedCost, 0);
+      const totalCost = tokenUsage.reduce((sum, usage: any) => sum + (usage.estimatedCost || 0), 0);
 
       return res.json({
         success: true,
@@ -524,7 +524,7 @@ app.post('/api/learning-path', async (req, res, next) => {
     if (session.learningPath) {
       // Return cached learning path
       const tokenUsage = await TokenUsage.find({ sessionId, operation: 'learning-path' });
-      const totalCost = tokenUsage.reduce((sum, usage) => sum + usage.estimatedCost, 0);
+      const totalCost = tokenUsage.reduce((sum, usage: any) => sum + (usage.estimatedCost || 0), 0);
 
       return res.json({
         success: true,
@@ -629,7 +629,7 @@ app.get('/api/analysis/:sessionId', async (req, res, next) => {
 
     // Get all token usage for this session
     const tokenUsageRecords = await TokenUsage.find({ sessionId }).sort({ createdAt: -1 });
-    const totalCost = tokenUsageRecords.reduce((sum, usage) => sum + usage.estimatedCost, 0);
+    const totalCost = tokenUsageRecords.reduce((sum, usage: any) => sum + (usage.estimatedCost || 0), 0);
 
     res.json({
       success: true,
@@ -644,11 +644,11 @@ app.get('/api/analysis/:sessionId', async (req, res, next) => {
           promptTokens: session.tokenUsage?.promptTokens || 0,
           completionTokens: session.tokenUsage?.completionTokens || 0,
           estimatedCost: totalCost,
-          breakdown: tokenUsageRecords.map((usage) => ({
+          breakdown: tokenUsageRecords.map((usage: any) => ({
             operation: usage.operation,
             tokens: usage.totalTokens,
             cost: usage.estimatedCost,
-            model: usage.model,
+            model: usage.modelName,
             createdAt: usage.createdAt,
           })),
         },
@@ -670,17 +670,17 @@ app.get('/api/token-usage/:sessionId', async (req, res, next) => {
 
   try {
     const tokenUsageRecords = await TokenUsage.find({ sessionId }).sort({ createdAt: -1 });
-    const totalCost = tokenUsageRecords.reduce((sum, usage) => sum + usage.estimatedCost, 0);
-    const totalTokens = tokenUsageRecords.reduce((sum, usage) => sum + usage.totalTokens, 0);
+    const totalCost = tokenUsageRecords.reduce((sum, usage: any) => sum + (usage.estimatedCost || 0), 0);
+    const totalTokens = tokenUsageRecords.reduce((sum, usage: any) => sum + (usage.totalTokens || 0), 0);
 
     res.json({
       success: true,
       tokenUsage: {
         totalTokens,
         totalCost,
-        breakdown: tokenUsageRecords.map((usage) => ({
+        breakdown: tokenUsageRecords.map((usage: any) => ({
           operation: usage.operation,
-          model: usage.model,
+          model: usage.modelName,
           promptTokens: usage.promptTokens,
           completionTokens: usage.completionTokens,
           totalTokens: usage.totalTokens,
