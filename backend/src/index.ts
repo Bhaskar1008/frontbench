@@ -25,17 +25,41 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// Middleware
-app.use(cors({
-  origin: [
-    'http://localhost:3000',
-    'https://*.netlify.app',
-    process.env.FRONTEND_URL || 'https://frontbench.netlify.app'
-  ],
+// Middleware - CORS configuration
+// Allows requests from:
+// 1. Local development (localhost:3000)
+// 2. All Netlify subdomains (*.netlify.app)
+// 3. Custom frontend URL from environment variable
+const corsOptions = {
+  origin: function (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    
+    // Allow localhost for development
+    if (origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:')) {
+      return callback(null, true);
+    }
+    
+    // Allow all Netlify subdomains
+    if (origin.includes('.netlify.app')) {
+      return callback(null, true);
+    }
+    
+    // Allow custom frontend URL from environment variable
+    const frontendUrl = process.env.FRONTEND_URL;
+    if (frontendUrl && origin === frontendUrl) {
+      return callback(null, true);
+    }
+    
+    // Default: allow the request
+    callback(null, true);
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-}));
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+};
+
+app.use(cors(corsOptions));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
