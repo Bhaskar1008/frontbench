@@ -5,7 +5,7 @@ import Home from './pages/Home'
 import Dashboard from './pages/Dashboard'
 
 function App() {
-  const [sessionId, setSessionId] = useState<string | null>(null)
+  const [, setSessionId] = useState<string | null>(null)
 
   return (
     <Router>

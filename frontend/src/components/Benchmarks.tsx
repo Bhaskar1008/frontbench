@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { TrendingUp, BarChart3, Target, Download } from 'lucide-react'
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar } from 'recharts'
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { Loader2 } from 'lucide-react'
 import { exportToPDF } from '../utils/pdfExport'
 
@@ -56,12 +56,6 @@ export default function Benchmarks({ benchmarks, onLoad, loading }: BenchmarksPr
     marketAverage: getLevelValue(skill.marketAverage),
     gap: skill.gap,
   })) || []
-
-  const radarData = skillData.slice(0, 8).map((skill: any) => ({
-    skill: skill.skill.substring(0, 15),
-    yourLevel: skill.yourLevel,
-    marketAverage: skill.marketAverage,
-  }))
 
   return (
     <div className="space-y-6">
