@@ -395,8 +395,7 @@ app.post('/api/resume/upload', upload.single('resume'), async (req, res, next) =
         yearsOfExperience: analysis.yearsOfExperience,
         tokenUsage: tokenUsage.totalTokens,
         estimatedCost: tokenUsage.estimatedCost,
-        chromaIndexed: chromaDocumentIds.length > 0,
-        chromaDocumentIds: chromaDocumentIds.length,
+        ragIndexing: 'async', // RAG indexing happens in background
       },
     });
 
