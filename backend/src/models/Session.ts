@@ -46,7 +46,6 @@ const SessionSchema = new Schema<ISession>(
     sessionId: {
       type: String,
       required: true,
-      unique: true,
     },
     fileName: String,
     fileSize: Number,

@@ -179,14 +179,13 @@ app.get('/api/health', async (req, res) => {
   
   if (process.env.ENABLE_RAG === 'true') {
     try {
-      const { VectorStoreManager } = await import('./vector-store/VectorStoreManager.js');
-      const vectorStore = new VectorStoreManager({
-        collectionName: process.env.CHROMA_COLLECTION || 'frontbench_documents',
-      });
+      const { getVectorStore } = await import('./vector-store/VectorStoreSingleton.js');
       
       // Try to initialize (this will log the status)
       try {
-        await vectorStore.initialize();
+        const vectorStore = await getVectorStore({
+          collectionName: process.env.CHROMA_COLLECTION || 'frontbench_documents',
+        });
         chromaStatus = vectorStore.isAvailable() ? 'connected' : 'disconnected';
       } catch (error: any) {
         chromaStatus = 'error';
@@ -286,10 +285,10 @@ app.post('/api/resume/upload', upload.single('resume'), async (req, res, next) =
           metadata: { operation: 'index-document-in-vector-store' },
         });
 
-        const { VectorStoreManager } = await import('./vector-store/VectorStoreManager.js');
+        const { getVectorStore } = await import('./vector-store/VectorStoreSingleton.js');
         const { DocumentProcessor } = await import('./document-processing/DocumentProcessor.js');
         
-        const vectorStore = new VectorStoreManager({
+        const vectorStore = await getVectorStore({
           collectionName: process.env.CHROMA_COLLECTION || 'frontbench_documents',
         });
         const documentProcessor = new DocumentProcessor();
