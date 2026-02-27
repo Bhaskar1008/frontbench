@@ -88,9 +88,9 @@ export class DocumentProcessor {
     metadata: ProcessedDocument['metadata']
   ): Promise<{ content: string; metadata: ProcessedDocument['metadata'] }> {
     const buffer = await fs.readFile(filePath);
-    // Lazy load pdf-parse to avoid test file loading issue
-    const pdfParse = (await import('pdf-parse')).default;
-    const pdfData = await pdfParse(buffer);
+    // Use wrapper function to handle pdf-parse module issues
+    const { parsePDF } = await import('../utils/pdfParser.js');
+    const pdfData = await parsePDF(buffer);
 
     return {
       content: pdfData.text,

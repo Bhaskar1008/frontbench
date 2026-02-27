@@ -245,9 +245,9 @@ app.post('/api/resume/upload', upload.single('resume'), async (req, res, next) =
     // Extract text from PDF
     if (req.file.mimetype === 'application/pdf') {
       const pdfBuffer = req.file.buffer;
-      // Lazy load pdf-parse to avoid test file loading issue
-      const pdfParse = (await import('pdf-parse')).default;
-      const pdfData = await pdfParse(pdfBuffer);
+      // Use wrapper function to handle pdf-parse module issues
+      const { parsePDF } = await import('./utils/pdfParser.js');
+      const pdfData = await parsePDF(pdfBuffer);
       extractedText = pdfData.text;
 
       extractionSpan.update({
