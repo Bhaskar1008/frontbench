@@ -42,26 +42,38 @@ const corsOptions = {
       return callback(null, true);
     }
     
-    // Allow all Netlify subdomains
+    // Allow all Netlify subdomains (including bright-dango-e501c1.netlify.app)
     if (origin.includes('.netlify.app')) {
+      console.log('✅ CORS: Allowing Netlify origin:', origin);
       return callback(null, true);
     }
     
     // Allow custom frontend URL from environment variable
     const frontendUrl = process.env.FRONTEND_URL;
     if (frontendUrl && origin === frontendUrl) {
+      console.log('✅ CORS: Allowing configured frontend URL:', origin);
       return callback(null, true);
     }
     
-    // Default: allow the request
+    // Log blocked origins for debugging
+    console.log('⚠️  CORS: Blocked origin:', origin);
+    
+    // Default: allow the request (permissive for now)
     callback(null, true);
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  exposedHeaders: ['Content-Type'],
+  maxAge: 86400, // 24 hours
 };
 
+// Apply CORS middleware
 app.use(cors(corsOptions));
+
+// Handle preflight OPTIONS requests explicitly
+app.options('*', cors(corsOptions));
+
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
