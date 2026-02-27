@@ -77,11 +77,16 @@ app.options('*', cors(corsOptions));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Request timeout middleware (30 seconds)
+// Request timeout middleware (60 seconds for large file uploads)
 app.use((req, res, next) => {
-  req.setTimeout(30000, () => {
+  req.setTimeout(60000, () => {
     if (!res.headersSent) {
       res.status(504).json({ success: false, error: 'Request timeout' });
+    }
+  });
+  res.setTimeout(60000, () => {
+    if (!res.headersSent) {
+      res.status(504).json({ success: false, error: 'Response timeout' });
     }
   });
   next();
@@ -237,8 +242,23 @@ app.get('/api/health', async (req, res) => {
  * Upload and analyze resume
  */
 app.post('/api/resume/upload', upload.single('resume'), async (req, res, next) => {
+  console.log('📤 Resume upload request received:', {
+    hasFile: !!req.file,
+    fileName: req.file?.originalname,
+    fileSize: req.file?.size,
+    mimeType: req.file?.mimetype,
+  });
+  
   if (!req.file) {
     return res.status(400).json({ success: false, error: 'No resume file uploaded' });
+  }
+  
+  // Validate file size (10MB max)
+  if (req.file.size > 10 * 1024 * 1024) {
+    return res.status(400).json({ 
+      success: false, 
+      error: 'File too large. Maximum size is 10MB.' 
+    });
   }
 
   const sessionId = uuidv4();
@@ -499,6 +519,12 @@ app.post('/api/resume/upload', upload.single('resume'), async (req, res, next) =
     });
 
     // Send response immediately, RAG indexing continues in background
+    console.log('✅ Resume analysis completed, sending response:', {
+      sessionId,
+      analysisComplete: !!analysis,
+      tokenUsage: tokenUsage.totalTokens,
+    });
+    
     res.json({
       success: true,
       sessionId,
@@ -986,6 +1012,18 @@ async function startServer() {
     process.exit(1);
   }
 }
+
+// Handle unhandled promise rejections
+process.on('unhandledRejection', (reason: any, promise: Promise<any>) => {
+  console.error('❌ Unhandled Rejection at:', promise, 'reason:', reason);
+  // Don't exit, just log - Railway will restart if needed
+});
+
+// Handle uncaught exceptions
+process.on('uncaughtException', (error: Error) => {
+  console.error('❌ Uncaught Exception:', error);
+  // Don't exit immediately, log and let Railway handle it
+});
 
 // Handle graceful shutdown
 process.on('SIGTERM', async () => {
