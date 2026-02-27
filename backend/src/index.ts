@@ -171,10 +171,42 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
  */
 app.get('/api/health', async (req, res) => {
   const dbStatus = getConnectionStatus();
+  
+  // Check Chroma/Vector Store status if RAG is enabled
+  let chromaStatus = 'not_configured';
+  let chromaError = null;
+  
+  if (process.env.ENABLE_RAG === 'true') {
+    try {
+      const { VectorStoreManager } = await import('./vector-store/VectorStoreManager.js');
+      const vectorStore = new VectorStoreManager({
+        collectionName: process.env.CHROMA_COLLECTION || 'frontbench_documents',
+      });
+      
+      // Try to initialize (this will log the status)
+      try {
+        await vectorStore.initialize();
+        chromaStatus = vectorStore.isAvailable() ? 'connected' : 'disconnected';
+      } catch (error: any) {
+        chromaStatus = 'error';
+        chromaError = error.message;
+      }
+    } catch (error: any) {
+      chromaStatus = 'error';
+      chromaError = error.message;
+    }
+  }
+  
   res.json({
     status: 'ok',
     message: 'Frontbench API is running',
     database: dbStatus ? 'connected' : 'disconnected',
+    chroma: {
+      enabled: process.env.ENABLE_RAG === 'true',
+      status: chromaStatus,
+      error: chromaError,
+      configured: !!(process.env.CHROMA_API_KEY || process.env.CHROMA_URL),
+    },
     timestamp: new Date().toISOString(),
   });
 });
