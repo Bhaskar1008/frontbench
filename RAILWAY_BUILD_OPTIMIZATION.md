@@ -30,13 +30,15 @@ The build is slow because:
 
 **After:**
 ```json
-"buildCommand": "npm ci --omit=dev && npm run build"
+"buildCommand": "npm install --production=false && npm run build"
 ```
 
-**Benefits:**
-- `npm ci` is faster and more reliable than `npm install`
-- `--omit=dev` skips dev dependencies (saves time and space)
-- Uses lockfile for faster, deterministic installs
+**Why not `npm ci`?**
+- Railway's Docker cache mounts conflict with `npm ci` (EBUSY error)
+- `npm install` works better with Railway's caching system
+- `--production=false` ensures dev dependencies are installed (needed for TypeScript build)
+
+**Note:** Railway automatically caches `node_modules`, so subsequent builds are faster.
 
 ---
 
