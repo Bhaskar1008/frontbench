@@ -65,6 +65,16 @@ app.use(cors(corsOptions));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
+// Request timeout middleware (30 seconds)
+app.use((req, res, next) => {
+  req.setTimeout(30000, () => {
+    if (!res.headersSent) {
+      res.status(504).json({ success: false, error: 'Request timeout' });
+    }
+  });
+  next();
+});
+
 // Request logging middleware
 app.use((req, res, next) => {
   const startTime = Date.now();
@@ -277,75 +287,81 @@ app.post('/api/resume/upload', upload.single('resume'), async (req, res, next) =
     }
 
     // Store document in Chroma vector store for RAG (if enabled)
+    // Do this asynchronously after response to avoid blocking the request
     let chromaDocumentIds: string[] = [];
-    if (process.env.ENABLE_RAG === 'true') {
-      try {
-        const ragSpan = trace.span({
-          name: 'rag-document-indexing',
-          metadata: { operation: 'index-document-in-vector-store' },
-        });
-
-        const { getVectorStore } = await import('./vector-store/VectorStoreSingleton.js');
-        const { DocumentProcessor } = await import('./document-processing/DocumentProcessor.js');
-        
-        const vectorStore = await getVectorStore({
-          collectionName: process.env.CHROMA_COLLECTION || 'frontbench_documents',
-        });
-        const documentProcessor = new DocumentProcessor();
-
-        // Create a temporary file for processing (since DocumentProcessor expects file path)
-        const fs = await import('fs/promises');
-        const path = await import('path');
-        const tempDir = 'uploads';
-        await fs.mkdir(tempDir, { recursive: true });
-        const tempFilePath = path.join(tempDir, `${sessionId}-${req.file.originalname}`);
-        await fs.writeFile(tempFilePath, req.file.buffer);
-
+    const ragPromise = (async () => {
+      if (process.env.ENABLE_RAG === 'true') {
         try {
-          // Process document
-          const document = await documentProcessor.processFile(tempFilePath);
-          const chunks = documentProcessor.chunkDocument(document, 1000, 200);
+          const ragSpan = trace.span({
+            name: 'rag-document-indexing',
+            metadata: { operation: 'index-document-in-vector-store' },
+          });
 
-          // Add to vector store
-          await vectorStore.initialize();
-          if (vectorStore.isAvailable()) {
-            chromaDocumentIds = await vectorStore.addDocuments(chunks, {
-              sessionId,
-              documentType: 'resume',
-              fileName: req.file.originalname,
-              uploadedAt: new Date().toISOString(),
-            });
-            
+          const { getVectorStore } = await import('./vector-store/VectorStoreSingleton.js');
+          const { DocumentProcessor } = await import('./document-processing/DocumentProcessor.js');
+          
+          const vectorStore = await getVectorStore({
+            collectionName: process.env.CHROMA_COLLECTION || 'frontbench_documents',
+          });
+          const documentProcessor = new DocumentProcessor();
+
+          // Create a temporary file for processing (since DocumentProcessor expects file path)
+          const fs = await import('fs/promises');
+          const path = await import('path');
+          const tempDir = 'uploads';
+          await fs.mkdir(tempDir, { recursive: true });
+          const tempFilePath = path.join(tempDir, `${sessionId}-${req.file.originalname}`);
+          
+          // Write file buffer to disk (free memory)
+          await fs.writeFile(tempFilePath, req.file.buffer);
+          // Clear buffer reference to free memory
+          (req.file as any).buffer = null;
+
+          try {
+            // Process document
+            const document = await documentProcessor.processFile(tempFilePath);
+            const chunks = documentProcessor.chunkDocument(document, 1000, 200);
+
+            // Add to vector store
+            if (vectorStore.isAvailable()) {
+              chromaDocumentIds = await vectorStore.addDocuments(chunks, {
+                sessionId,
+                documentType: 'resume',
+                fileName: req.file.originalname,
+                uploadedAt: new Date().toISOString(),
+              });
+              
+              ragSpan.update({
+                metadata: {
+                  chunksIndexed: chunks.length,
+                  documentIds: chromaDocumentIds.length,
+                  indexed: true,
+                },
+              });
+            } else {
+              ragSpan.update({
+                metadata: { warning: 'Vector store not available, skipping indexing' },
+              });
+            }
+
+            // Clean up temp file
+            await fs.unlink(tempFilePath).catch(() => {});
+          } catch (ragError: any) {
+            // Clean up temp file on error
+            await fs.unlink(tempFilePath).catch(() => {});
+            console.warn('⚠️  Failed to index document in vector store:', ragError.message);
             ragSpan.update({
-              metadata: {
-                chunksIndexed: chunks.length,
-                documentIds: chromaDocumentIds.length,
-                indexed: true,
-              },
-            });
-          } else {
-            ragSpan.update({
-              metadata: { warning: 'Vector store not available, skipping indexing' },
+              metadata: { error: ragError.message, indexed: false },
             });
           }
 
-          // Clean up temp file
-          await fs.unlink(tempFilePath).catch(() => {});
-        } catch (ragError: any) {
-          // Clean up temp file on error
-          await fs.unlink(tempFilePath).catch(() => {});
-          console.warn('⚠️  Failed to index document in vector store:', ragError.message);
-          ragSpan.update({
-            metadata: { error: ragError.message, indexed: false },
-          });
+          ragSpan.end();
+        } catch (ragInitError: any) {
+          console.warn('⚠️  RAG indexing skipped:', ragInitError.message);
+          // Continue with analysis even if RAG fails
         }
-
-        ragSpan.end();
-      } catch (ragInitError: any) {
-        console.warn('⚠️  RAG indexing skipped:', ragInitError.message);
-        // Continue with analysis even if RAG fails
       }
-    }
+    })();
 
     // Analyze resume using AI
     const { analysis, tokenUsage } = await analyzeResume(extractedText, openai, trace, sessionId);
@@ -402,6 +418,7 @@ app.post('/api/resume/upload', upload.single('resume'), async (req, res, next) =
       },
     });
 
+    // Send response immediately, RAG indexing continues in background
     res.json({
       success: true,
       sessionId,
@@ -410,31 +427,47 @@ app.post('/api/resume/upload', upload.single('resume'), async (req, res, next) =
       traceId: trace.id,
       rag: {
         enabled: process.env.ENABLE_RAG === 'true',
-        indexed: chromaDocumentIds.length > 0,
-        documentIds: chromaDocumentIds.length,
+        indexing: 'in_progress', // RAG indexing happens async
       },
+    });
+
+    // Continue RAG indexing in background (don't await)
+    ragPromise.catch((error) => {
+      console.error('Background RAG indexing failed:', error);
     });
   } catch (error: any) {
     console.error('Error processing resume:', error);
-    trace.update({
-      metadata: {
-        error: error.message,
-        stack: error.stack,
-      },
-    });
-    safeFlushLangfuse();
+    
+    // Ensure response hasn't been sent
+    if (!res.headersSent) {
+      trace.update({
+        metadata: {
+          error: error.message,
+          stack: error.stack?.substring(0, 500), // Limit stack trace size
+        },
+      });
+      safeFlushLangfuse();
 
-    await logAuditEvent({
-      sessionId,
-      action: 'resume-upload',
-      resource: '/api/resume/upload',
-      status: 'error',
-      ipAddress: getIpAddress(req),
-      userAgent: getUserAgent(req),
-      errorMessage: error.message,
-    });
+      await logAuditEvent({
+        sessionId,
+        action: 'resume-upload',
+        resource: '/api/resume/upload',
+        status: 'error',
+        ipAddress: getIpAddress(req),
+        userAgent: getUserAgent(req),
+        errorMessage: error.message?.substring(0, 500), // Limit error message size
+      });
 
-    next(error);
+      // Send error response
+      res.status(500).json({
+        success: false,
+        error: error.message || 'Internal server error',
+        sessionId,
+      });
+    } else {
+      // Response already sent, just log
+      console.error('Error occurred after response was sent:', error.message);
+    }
   }
 });
 
