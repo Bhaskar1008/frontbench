@@ -277,6 +277,77 @@ app.post('/api/resume/upload', upload.single('resume'), async (req, res, next) =
       });
     }
 
+    // Store document in Chroma vector store for RAG (if enabled)
+    let chromaDocumentIds: string[] = [];
+    if (process.env.ENABLE_RAG === 'true') {
+      try {
+        const ragSpan = trace.span({
+          name: 'rag-document-indexing',
+          metadata: { operation: 'index-document-in-vector-store' },
+        });
+
+        const { VectorStoreManager } = await import('./vector-store/VectorStoreManager.js');
+        const { DocumentProcessor } = await import('./document-processing/DocumentProcessor.js');
+        
+        const vectorStore = new VectorStoreManager({
+          collectionName: process.env.CHROMA_COLLECTION || 'frontbench_documents',
+        });
+        const documentProcessor = new DocumentProcessor();
+
+        // Create a temporary file for processing (since DocumentProcessor expects file path)
+        const fs = await import('fs/promises');
+        const path = await import('path');
+        const tempDir = 'uploads';
+        await fs.mkdir(tempDir, { recursive: true });
+        const tempFilePath = path.join(tempDir, `${sessionId}-${req.file.originalname}`);
+        await fs.writeFile(tempFilePath, req.file.buffer);
+
+        try {
+          // Process document
+          const document = await documentProcessor.processFile(tempFilePath);
+          const chunks = documentProcessor.chunkDocument(document, 1000, 200);
+
+          // Add to vector store
+          await vectorStore.initialize();
+          if (vectorStore.isAvailable()) {
+            chromaDocumentIds = await vectorStore.addDocuments(chunks, {
+              sessionId,
+              documentType: 'resume',
+              fileName: req.file.originalname,
+              uploadedAt: new Date().toISOString(),
+            });
+            
+            ragSpan.update({
+              metadata: {
+                chunksIndexed: chunks.length,
+                documentIds: chromaDocumentIds.length,
+                indexed: true,
+              },
+            });
+          } else {
+            ragSpan.update({
+              metadata: { warning: 'Vector store not available, skipping indexing' },
+            });
+          }
+
+          // Clean up temp file
+          await fs.unlink(tempFilePath).catch(() => {});
+        } catch (ragError: any) {
+          // Clean up temp file on error
+          await fs.unlink(tempFilePath).catch(() => {});
+          console.warn('⚠️  Failed to index document in vector store:', ragError.message);
+          ragSpan.update({
+            metadata: { error: ragError.message, indexed: false },
+          });
+        }
+
+        ragSpan.end();
+      } catch (ragInitError: any) {
+        console.warn('⚠️  RAG indexing skipped:', ragInitError.message);
+        // Continue with analysis even if RAG fails
+      }
+    }
+
     // Analyze resume using AI
     const { analysis, tokenUsage } = await analyzeResume(extractedText, openai, trace, sessionId);
 
@@ -310,6 +381,8 @@ app.post('/api/resume/upload', upload.single('resume'), async (req, res, next) =
         yearsOfExperience: analysis.yearsOfExperience,
         tokenUsage: tokenUsage.totalTokens,
         estimatedCost: tokenUsage.estimatedCost,
+        chromaIndexed: chromaDocumentIds.length > 0,
+        chromaDocumentIds: chromaDocumentIds.length,
       },
     });
 
@@ -336,6 +409,11 @@ app.post('/api/resume/upload', upload.single('resume'), async (req, res, next) =
       analysis,
       tokenUsage,
       traceId: trace.id,
+      rag: {
+        enabled: process.env.ENABLE_RAG === 'true',
+        indexed: chromaDocumentIds.length > 0,
+        documentIds: chromaDocumentIds.length,
+      },
     });
   } catch (error: any) {
     console.error('Error processing resume:', error);

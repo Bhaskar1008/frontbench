@@ -6,6 +6,7 @@ import ResumeAnalysis from '../components/ResumeAnalysis'
 import Benchmarks from '../components/Benchmarks'
 import CareerTrajectory from '../components/CareerTrajectory'
 import LearningPath from '../components/LearningPath'
+import PlatformInfo from '../components/PlatformInfo'
 
 interface AnalysisData {
   analysis: any
@@ -32,7 +33,7 @@ export default function Dashboard() {
   const [data, setData] = useState<AnalysisData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<'analysis' | 'benchmarks' | 'trajectory' | 'learning'>('analysis')
+  const [activeTab, setActiveTab] = useState<'analysis' | 'benchmarks' | 'trajectory' | 'learning' | 'info'>('analysis')
 
   useEffect(() => {
     if (!sessionId) {
@@ -234,6 +235,7 @@ export default function Dashboard() {
               { id: 'benchmarks', label: 'Benchmarks' },
               { id: 'trajectory', label: 'Career Trajectory' },
               { id: 'learning', label: 'Learning Path' },
+              { id: 'info', label: 'Platform Info' },
             ].map((tab) => (
               <button
                 key={tab.id}
@@ -275,6 +277,7 @@ export default function Dashboard() {
             loading={!data.learningPath}
           />
         )}
+        {activeTab === 'info' && <PlatformInfo />}
       </div>
     </div>
   )
