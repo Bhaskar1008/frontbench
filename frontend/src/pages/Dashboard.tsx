@@ -33,7 +33,7 @@ export default function Dashboard() {
   const [data, setData] = useState<AnalysisData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<'analysis' | 'benchmarks' | 'trajectory' | 'learning' | 'info'>('analysis')
+  const [activeTab, setActiveTab] = useState<'analysis' | 'benchmarks' | 'trajectory' | 'learning' | 'info'>('info')
 
   useEffect(() => {
     if (!sessionId) {
@@ -231,11 +231,11 @@ export default function Dashboard() {
         <div className="border-b border-white/20">
           <nav className="-mb-px flex space-x-8">
             {[
+              { id: 'info', label: 'Platform Info' },
               { id: 'analysis', label: 'Resume Analysis' },
               { id: 'benchmarks', label: 'Benchmarks' },
               { id: 'trajectory', label: 'Career Trajectory' },
               { id: 'learning', label: 'Learning Path' },
-              { id: 'info', label: 'Platform Info' },
             ].map((tab) => (
               <button
                 key={tab.id}
