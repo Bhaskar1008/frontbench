@@ -24,6 +24,7 @@ export interface PDFParseResult {
  */
 export async function parsePDF(buffer: Buffer): Promise<PDFParseResult> {
   // Use pdf-parse-debugging-disabled which doesn't have the test file issue
+  // @ts-ignore - pdf-parse-debugging-disabled has same API as pdf-parse
   const pdfParseModule = await import('pdf-parse-debugging-disabled');
   const pdfParse = pdfParseModule.default || pdfParseModule;
   
