@@ -265,11 +265,12 @@ app.post('/api/resume/upload', upload.single('resume'), async (req, res, next) =
 
     // Extract text from PDF
     if (req.file.mimetype === 'application/pdf') {
+      let pdfData: any;
       try {
         const pdfBuffer = req.file.buffer;
         // Use wrapper function to handle pdf-parse module issues
         const { parsePDF } = await import('./utils/pdfParser.js');
-        const pdfData = await parsePDF(pdfBuffer);
+        pdfData = await parsePDF(pdfBuffer);
         extractedText = pdfData.text || '';
         
         // Limit extracted text size to prevent memory issues
@@ -277,6 +278,14 @@ app.post('/api/resume/upload', upload.single('resume'), async (req, res, next) =
           extractedText = extractedText.substring(0, 100000);
           console.warn('⚠️  Extracted text truncated to 100KB');
         }
+        
+        extractionSpan.update({
+          metadata: {
+            pageCount: pdfData.numpages,
+            textLength: extractedText.length,
+            extracted: true,
+          },
+        });
       } catch (pdfError: any) {
         console.error('Error parsing PDF:', pdfError);
         extractionSpan.end();
@@ -294,14 +303,6 @@ app.post('/api/resume/upload', upload.single('resume'), async (req, res, next) =
         }
         return;
       }
-
-      extractionSpan.update({
-        metadata: {
-          pageCount: pdfData.numpages,
-          textLength: extractedText.length,
-          extracted: true,
-        },
-      });
     } else {
       extractionSpan.end();
       return res.status(400).json({
