@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Upload, FileText, Sparkles, ArrowRight, TrendingUp } from 'lucide-react'
 import { uploadClient } from '../utils/api'
+import PlatformInfo from '../components/PlatformInfo'
 
 interface HomeProps {
   onResumeUploaded: (sessionId: string) => void
@@ -11,6 +12,7 @@ export default function Home({ onResumeUploaded }: HomeProps) {
   const [file, setFile] = useState<File | null>(null)
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [showPlatformInfo, setShowPlatformInfo] = useState(true) // Show Platform Info by default
   const navigate = useNavigate()
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -124,6 +126,23 @@ export default function Home({ onResumeUploaded }: HomeProps) {
           </div>
         </div>
       </div>
+
+      {/* Platform Info Toggle */}
+      <div className="mt-20 mb-8 text-center">
+        <button
+          onClick={() => setShowPlatformInfo(!showPlatformInfo)}
+          className="bg-white/10 hover:bg-white/20 border border-white/20 rounded-lg px-6 py-3 text-white font-medium transition-colors"
+        >
+          {showPlatformInfo ? 'Hide' : 'Show'} Platform Information
+        </button>
+      </div>
+
+      {/* Platform Info Section */}
+      {showPlatformInfo && (
+        <div id="platform-info" className="mt-8 mb-20">
+          <PlatformInfo />
+        </div>
+      )}
 
       {/* Features Section */}
       <div className="mt-20 grid md:grid-cols-3 gap-8">

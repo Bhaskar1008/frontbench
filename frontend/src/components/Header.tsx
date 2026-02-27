@@ -21,6 +21,16 @@ export default function Header() {
             >
               Home
             </Link>
+            <a
+              href="#platform-info"
+              onClick={(e) => {
+                e.preventDefault()
+                document.getElementById('platform-info')?.scrollIntoView({ behavior: 'smooth' })
+              }}
+              className="text-white/80 hover:text-white transition-colors font-medium"
+            >
+              Platform Info
+            </a>
           </nav>
         </div>
       </div>
