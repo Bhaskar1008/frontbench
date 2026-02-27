@@ -265,11 +265,35 @@ app.post('/api/resume/upload', upload.single('resume'), async (req, res, next) =
 
     // Extract text from PDF
     if (req.file.mimetype === 'application/pdf') {
-      const pdfBuffer = req.file.buffer;
-      // Use wrapper function to handle pdf-parse module issues
-      const { parsePDF } = await import('./utils/pdfParser.js');
-      const pdfData = await parsePDF(pdfBuffer);
-      extractedText = pdfData.text;
+      try {
+        const pdfBuffer = req.file.buffer;
+        // Use wrapper function to handle pdf-parse module issues
+        const { parsePDF } = await import('./utils/pdfParser.js');
+        const pdfData = await parsePDF(pdfBuffer);
+        extractedText = pdfData.text || '';
+        
+        // Limit extracted text size to prevent memory issues
+        if (extractedText.length > 100000) {
+          extractedText = extractedText.substring(0, 100000);
+          console.warn('⚠️  Extracted text truncated to 100KB');
+        }
+      } catch (pdfError: any) {
+        console.error('Error parsing PDF:', pdfError);
+        extractionSpan.end();
+        trace.update({
+          metadata: { error: pdfError.message, errorType: 'pdf_parse_error' },
+        });
+        safeFlushLangfuse();
+        
+        if (!res.headersSent) {
+          return res.status(500).json({
+            success: false,
+            error: 'Failed to parse PDF. Please ensure the file is a valid PDF.',
+            sessionId,
+          });
+        }
+        return;
+      }
 
       extractionSpan.update({
         metadata: {
@@ -375,29 +399,74 @@ app.post('/api/resume/upload', upload.single('resume'), async (req, res, next) =
     })();
 
     // Analyze resume using AI
-    const { analysis, tokenUsage } = await analyzeResume(extractedText, openai, trace, sessionId);
+    let analysis: any;
+    let tokenUsage: any;
+    try {
+      const result = await analyzeResume(extractedText, openai, trace, sessionId);
+      analysis = result.analysis;
+      tokenUsage = result.tokenUsage;
+    } catch (analyzeError: any) {
+      console.error('Error in analyzeResume:', analyzeError);
+      trace.update({
+        metadata: {
+          error: analyzeError.message,
+          errorType: 'analysis_failed',
+        },
+      });
+      safeFlushLangfuse();
+      
+      if (!res.headersSent) {
+        return res.status(500).json({
+          success: false,
+          error: 'Failed to analyze resume. Please try again.',
+          sessionId,
+        });
+      }
+      return;
+    }
 
     // Create session in database
-    const session = await Session.create({
-      sessionId,
-      fileName: req.file.originalname,
-      fileSize: req.file.size,
-      uploadedAt: new Date(),
-      extractedText,
-      analysis,
-      tokenUsage: {
-        totalTokens: tokenUsage.totalTokens,
-        promptTokens: tokenUsage.promptTokens,
-        completionTokens: tokenUsage.completionTokens,
-        estimatedCost: tokenUsage.estimatedCost,
-      },
-      metadata: {
-        ipAddress: getIpAddress(req),
-        userAgent: getUserAgent(req),
-        name: analysis.name,
-        email: analysis.email,
-      },
-    });
+    let session;
+    try {
+      session = await Session.create({
+        sessionId,
+        fileName: req.file.originalname,
+        fileSize: req.file.size,
+        uploadedAt: new Date(),
+        extractedText: extractedText.substring(0, 100000), // Limit text size to prevent memory issues
+        analysis,
+        tokenUsage: {
+          totalTokens: tokenUsage.totalTokens,
+          promptTokens: tokenUsage.promptTokens,
+          completionTokens: tokenUsage.completionTokens,
+          estimatedCost: tokenUsage.estimatedCost,
+        },
+        metadata: {
+          ipAddress: getIpAddress(req),
+          userAgent: getUserAgent(req),
+          name: analysis?.name,
+          email: analysis?.email,
+        },
+      });
+    } catch (dbError: any) {
+      console.error('Error creating session in database:', dbError);
+      trace.update({
+        metadata: {
+          error: dbError.message,
+          errorType: 'database_error',
+        },
+      });
+      safeFlushLangfuse();
+      
+      if (!res.headersSent) {
+        return res.status(500).json({
+          success: false,
+          error: 'Failed to save session. Please try again.',
+          sessionId,
+        });
+      }
+      return;
+    }
 
     trace.update({
       metadata: {
@@ -874,6 +943,23 @@ app.get('/api/token-usage/:sessionId', async (req, res, next) => {
     console.error('Error fetching token usage:', error);
     next(error);
   }
+});
+
+// Global error handling middleware (must be after all routes)
+app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  console.error('Unhandled error:', err);
+  
+  // Don't send error if response already sent
+  if (res.headersSent) {
+    return next(err);
+  }
+  
+  // Send error response
+  res.status(err.status || 500).json({
+    success: false,
+    error: err.message || 'Internal server error',
+    ...(process.env.NODE_ENV === 'development' && { stack: err.stack }),
+  });
 });
 
 // Agentic AI Routes
