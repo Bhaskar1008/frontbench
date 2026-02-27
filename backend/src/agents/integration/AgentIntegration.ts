@@ -4,13 +4,21 @@
  */
 
 import { ResumeAnalysisAgent } from '../ResumeAnalysisAgent.js';
+import { BenchmarkAgent } from '../BenchmarkAgent.js';
+import { TrajectoryAgent } from '../TrajectoryAgent.js';
+import { LearningPathAgent } from '../LearningPathAgent.js';
+import { PlannerAgent } from '../PlannerAgent.js';
+import { ExecutorAgent } from '../ExecutorAgent.js';
+import { ValidatorAgent } from '../ValidatorAgent.js';
 import { AgentOrchestrator } from '../orchestrator/AgentOrchestrator.js';
 import { VectorStoreManager } from '../../vector-store/VectorStoreManager.js';
 import { DocumentProcessor } from '../../document-processing/DocumentProcessor.js';
 import { MemoryManager } from '../memory/MemoryManager.js';
 import { Guardrails } from '../../security/Guardrails.js';
+import { AgentJobProcessor } from '../../jobs/AgentJobProcessor.js';
 import { Langfuse } from 'langfuse';
 import { Session } from '../../models/Session.js';
+import { logAuditEvent } from '../../utils/auditLogger.js';
 
 export interface AgentIntegrationConfig {
   sessionId: string;
@@ -74,17 +82,71 @@ export class AgentIntegration {
     this.registerAgents(langfuseClient);
   }
 
+  private planner?: PlannerAgent;
+  private executor?: ExecutorAgent;
+  private validator?: ValidatorAgent;
+  private jobProcessor?: AgentJobProcessor;
+
   /**
    * Register all agents with orchestrator
    */
   private registerAgents(langfuseClient: Langfuse): void {
+    // Core agents
     const resumeAgent = new ResumeAnalysisAgent({
       langfuseClient,
       traceId: `trace-${this.sessionId}`,
       vectorStoreManager: this.vectorStoreManager,
     });
 
+    const benchmarkAgent = new BenchmarkAgent({
+      langfuseClient,
+      traceId: `trace-${this.sessionId}`,
+      vectorStoreManager: this.vectorStoreManager,
+    });
+
+    const trajectoryAgent = new TrajectoryAgent({
+      langfuseClient,
+      traceId: `trace-${this.sessionId}`,
+      vectorStoreManager: this.vectorStoreManager,
+    });
+
+    const learningPathAgent = new LearningPathAgent({
+      langfuseClient,
+      traceId: `trace-${this.sessionId}`,
+      vectorStoreManager: this.vectorStoreManager,
+    });
+
+    // Register with orchestrator
     this.orchestrator.registerAgent('resume_analysis', resumeAgent);
+    this.orchestrator.registerAgent('benchmark', benchmarkAgent);
+    this.orchestrator.registerAgent('trajectory', trajectoryAgent);
+    this.orchestrator.registerAgent('learning_path', learningPathAgent);
+
+    // Planning and execution agents
+    this.planner = new PlannerAgent({
+      langfuseClient,
+      traceId: `trace-${this.sessionId}`,
+    });
+
+    this.executor = new ExecutorAgent({
+      langfuseClient,
+      traceId: `trace-${this.sessionId}`,
+      orchestrator: this.orchestrator,
+    });
+
+    this.validator = new ValidatorAgent({
+      langfuseClient,
+      traceId: `trace-${this.sessionId}`,
+    });
+
+    // Job processor for async execution
+    this.jobProcessor = new AgentJobProcessor(
+      this.orchestrator,
+      this.planner,
+      this.executor,
+      this.validator,
+      { concurrency: 3 }
+    );
   }
 
   /**
@@ -163,9 +225,30 @@ export class AgentIntegration {
     benchmarks: any;
     tokenUsage: any;
   }> {
-    // This would use a BenchmarkAgent (to be implemented)
-    // For now, return placeholder
-    throw new Error('BenchmarkAgent not yet implemented');
+    const task = {
+      id: `benchmark-${Date.now()}`,
+      type: 'generation' as const,
+      description: 'Generate benchmark data for resume analysis',
+      input: { resumeAnalysis },
+      priority: 1,
+    };
+
+    const result = await this.orchestrator.executeTask(task);
+
+    await logAuditEvent({
+      sessionId: this.sessionId,
+      action: 'agent_execution',
+      status: 'success',
+      metadata: {
+        agentName: 'benchmark',
+        operation: 'generate_benchmarks',
+      },
+    } as any);
+
+    return {
+      benchmarks: JSON.parse(result.result),
+      tokenUsage: result.tokenUsage,
+    };
   }
 
   /**
@@ -175,8 +258,30 @@ export class AgentIntegration {
     trajectory: any;
     tokenUsage: any;
   }> {
-    // This would use a TrajectoryAgent (to be implemented)
-    throw new Error('TrajectoryAgent not yet implemented');
+    const task = {
+      id: `trajectory-${Date.now()}`,
+      type: 'generation' as const,
+      description: 'Generate career trajectory for resume analysis',
+      input: { resumeAnalysis },
+      priority: 1,
+    };
+
+    const result = await this.orchestrator.executeTask(task);
+
+    await logAuditEvent({
+      sessionId: this.sessionId,
+      action: 'agent_execution',
+      status: 'success',
+      metadata: {
+        agentName: 'trajectory',
+        operation: 'generate_trajectory',
+      },
+    } as any);
+
+    return {
+      trajectory: JSON.parse(result.result),
+      tokenUsage: result.tokenUsage,
+    };
   }
 
   /**
@@ -189,8 +294,59 @@ export class AgentIntegration {
     learningPath: any;
     tokenUsage: any;
   }> {
-    // This would use a LearningPathAgent (to be implemented)
-    throw new Error('LearningPathAgent not yet implemented');
+    const task = {
+      id: `learning-path-${Date.now()}`,
+      type: 'generation' as const,
+      description: 'Generate learning path for career development',
+      input: { resumeAnalysis, trajectory },
+      priority: 1,
+    };
+
+    const result = await this.orchestrator.executeTask(task);
+
+    await logAuditEvent({
+      sessionId: this.sessionId,
+      action: 'agent_execution',
+      status: 'success',
+      metadata: {
+        agentName: 'learning_path',
+        operation: 'generate_learning_path',
+      },
+    } as any);
+
+    return {
+      learningPath: JSON.parse(result.result),
+      tokenUsage: result.tokenUsage,
+    };
+  }
+
+  /**
+   * Execute full analysis workflow (async)
+   */
+  async executeFullAnalysisAsync(resumeText: string): Promise<string> {
+    if (!this.jobProcessor) {
+      throw new Error('Job processor not initialized');
+    }
+
+    const jobId = await this.jobProcessor.addJob('full_analysis', {
+      task: 'Perform complete resume analysis including benchmarks, trajectory, and learning path',
+      context: { resumeText },
+      sessionId: this.sessionId,
+      validate: true,
+    });
+
+    return jobId;
+  }
+
+  /**
+   * Get job status
+   */
+  getJobStatus(jobId: string): any {
+    if (!this.jobProcessor) {
+      throw new Error('Job processor not initialized');
+    }
+
+    return this.jobProcessor.getJobStatus(jobId);
   }
 
   /**

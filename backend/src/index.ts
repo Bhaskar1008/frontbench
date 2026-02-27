@@ -19,6 +19,7 @@ import { generateBenchmarks } from './services/benchmarkService.js';
 import { generateCareerTrajectory } from './services/trajectoryService.js';
 import { generateLearningPath } from './services/learningPathService.js';
 import { logAuditEvent, getIpAddress, getUserAgent } from './utils/auditLogger.js';
+import agentRoutes from './routes/agentRoutes.js';
 
 dotenv.config();
 
@@ -719,6 +720,12 @@ app.get('/api/token-usage/:sessionId', async (req, res, next) => {
     next(error);
   }
 });
+
+// Agentic AI Routes
+if (process.env.ENABLE_AGENTIC_AI === 'true') {
+  app.use('/api/agent', agentRoutes);
+  console.log('🤖 Agentic AI routes enabled');
+}
 
 // Start server
 async function startServer() {

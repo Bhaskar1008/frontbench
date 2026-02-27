@@ -125,6 +125,77 @@ export class MemoryManager {
   }
 
   /**
+   * Get user-level long-term memory
+   */
+  async getUserMemory(userId?: string): Promise<Record<string, any>> {
+    if (!userId) {
+      return {};
+    }
+
+    // Get all sessions for this user
+    const sessions = await Session.find({
+      'metadata.userId': userId,
+    }).sort({ createdAt: -1 }).limit(10);
+
+    // Extract patterns and preferences
+    const preferences: Record<string, any> = {
+      preferredRoles: new Set<string>(),
+      skills: new Set<string>(),
+      industries: new Set<string>(),
+    };
+
+    sessions.forEach((session) => {
+      if (session.metadata?.preferences) {
+        Object.assign(preferences, session.metadata.preferences);
+      }
+    });
+
+    return {
+      sessionCount: sessions.length,
+      preferences: Object.fromEntries(
+        Object.entries(preferences).map(([key, value]) => [
+          key,
+          Array.isArray(value) ? value : Array.from(value as Set<any>),
+        ])
+      ),
+    };
+  }
+
+  /**
+   * Update user preferences in memory
+   */
+  async updateUserPreferences(preferences: Record<string, any>): Promise<void> {
+    await Session.updateOne(
+      { sessionId: this.sessionId },
+      {
+        $set: {
+          'metadata.userPreferences': preferences,
+          'metadata.preferencesUpdatedAt': new Date(),
+        },
+      }
+    );
+  }
+
+  /**
+   * Get project-level knowledge base
+   */
+  async getProjectKnowledge(projectId: string): Promise<any[]> {
+    // Get all documents and analyses related to this project
+    const sessions = await Session.find({
+      'metadata.projectId': projectId,
+    });
+
+    return sessions.map((session) => ({
+      sessionId: session.sessionId,
+      analysis: session.analysis,
+      benchmarks: session.benchmarks,
+      trajectory: session.trajectory,
+      learningPath: session.learningPath,
+      createdAt: session.createdAt,
+    }));
+  }
+
+  /**
    * Persist memory to database
    */
   private async persistToDatabase(input: string, output: string): Promise<void> {

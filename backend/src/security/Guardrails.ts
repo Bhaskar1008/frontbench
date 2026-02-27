@@ -188,11 +188,84 @@ export class Guardrails {
     score?: number;
     categories?: string[];
   }> {
-    // Placeholder for toxicity detection
-    // In production, integrate with a toxicity detection API or model
-    // For now, return safe defaults
+    // Basic toxicity patterns
+    const toxicPatterns = [
+      /hate|discrimination|violence|threat/i,
+      /offensive|abusive|harassment/i,
+    ];
+
+    const matches = toxicPatterns.filter((pattern) => pattern.test(text));
+
+    if (matches.length > 0) {
+      return {
+        isToxic: true,
+        score: matches.length / toxicPatterns.length,
+        categories: ['general'],
+      };
+    }
+
     return {
       isToxic: false,
+      score: 0,
     };
+  }
+
+  /**
+   * Validate agent output structure
+   */
+  async validateAgentOutput(
+    output: any,
+    expectedSchema: Record<string, any>
+  ): Promise<ValidationResult> {
+    const issues: ValidationIssue[] = [];
+
+    // Check required fields
+    for (const [field, type] of Object.entries(expectedSchema)) {
+      if (!(field in output)) {
+        issues.push({
+          type: 'error',
+          field,
+          message: `Missing required field: ${field}`,
+          severity: 'high',
+        });
+      } else if (typeof output[field] !== type) {
+        issues.push({
+          type: 'warning',
+          field,
+          message: `Type mismatch: expected ${type}, got ${typeof output[field]}`,
+          severity: 'medium',
+        });
+      }
+    }
+
+    return {
+      isValid: issues.filter((i) => i.type === 'error').length === 0,
+      score: issues.length === 0 ? 100 : Math.max(0, 100 - issues.length * 10),
+      issues,
+      suggestions: issues.length > 0 ? ['Fix validation errors'] : [],
+    };
+  }
+
+  /**
+   * Sanitize output before returning to user
+   */
+  sanitizeOutput(output: any): any {
+    if (typeof output === 'string') {
+      return this.maskPII(output);
+    }
+
+    if (Array.isArray(output)) {
+      return output.map((item) => this.sanitizeOutput(item));
+    }
+
+    if (typeof output === 'object' && output !== null) {
+      const sanitized: any = {};
+      for (const [key, value] of Object.entries(output)) {
+        sanitized[key] = this.sanitizeOutput(value);
+      }
+      return sanitized;
+    }
+
+    return output;
   }
 }
