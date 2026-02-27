@@ -5,7 +5,8 @@
 
 import fs from 'fs/promises';
 import path from 'path';
-import pdfParse from 'pdf-parse';
+// pdf-parse is lazy-loaded to avoid test file loading issue
+// import pdfParse from 'pdf-parse';
 import mammoth from 'mammoth';
 
 export interface ProcessedDocument {
@@ -87,6 +88,8 @@ export class DocumentProcessor {
     metadata: ProcessedDocument['metadata']
   ): Promise<{ content: string; metadata: ProcessedDocument['metadata'] }> {
     const buffer = await fs.readFile(filePath);
+    // Lazy load pdf-parse to avoid test file loading issue
+    const pdfParse = (await import('pdf-parse')).default;
     const pdfData = await pdfParse(buffer);
 
     return {

@@ -8,7 +8,8 @@ import cors from 'cors';
 import multer from 'multer';
 import OpenAI from 'openai';
 import dotenv from 'dotenv';
-import pdfParse from 'pdf-parse';
+// pdf-parse is lazy-loaded to avoid test file loading issue
+// import pdfParse from 'pdf-parse';
 import { v4 as uuidv4 } from 'uuid';
 import { Langfuse } from 'langfuse';
 import { connectDatabase, getConnectionStatus } from './config/database.js';
@@ -244,6 +245,8 @@ app.post('/api/resume/upload', upload.single('resume'), async (req, res, next) =
     // Extract text from PDF
     if (req.file.mimetype === 'application/pdf') {
       const pdfBuffer = req.file.buffer;
+      // Lazy load pdf-parse to avoid test file loading issue
+      const pdfParse = (await import('pdf-parse')).default;
       const pdfData = await pdfParse(pdfBuffer);
       extractedText = pdfData.text;
 
