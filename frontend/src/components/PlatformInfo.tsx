@@ -5,7 +5,6 @@ import {
   Brain, 
   Zap, 
   Shield, 
-  TrendingUp, 
   Search,
   FileText,
   ChevronDown,
@@ -142,7 +141,7 @@ export default function PlatformInfo() {
                 <li>• <strong>Purpose:</strong> Stores document embeddings for semantic search</li>
                 <li>• <strong>When Used:</strong> Every resume upload is indexed automatically</li>
                 <li>• <strong>Benefits:</strong> Enables AI to "remember" and reference your resume content</li>
-                <li>• <strong>Status:</strong> {process.env.VITE_ENABLE_RAG === 'true' ? '✅ Enabled' : '⚠️ Check backend config'}</li>
+                <li>• <strong>Status:</strong> {import.meta.env.VITE_ENABLE_RAG === 'true' ? '✅ Enabled' : '⚠️ Check backend config'}</li>
               </ul>
             </div>
 
