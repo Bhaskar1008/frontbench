@@ -216,8 +216,23 @@ export class Guardrails {
   async validateAgentOutput(
     output: any,
     expectedSchema: Record<string, any>
-  ): Promise<ValidationResult> {
-    const issues: ValidationIssue[] = [];
+  ): Promise<{
+    isValid: boolean;
+    score: number;
+    issues: Array<{
+      type: 'error' | 'warning' | 'info';
+      field: string;
+      message: string;
+      severity: 'high' | 'medium' | 'low';
+    }>;
+    suggestions: string[];
+  }> {
+    const issues: Array<{
+      type: 'error' | 'warning' | 'info';
+      field: string;
+      message: string;
+      severity: 'high' | 'medium' | 'low';
+    }> = [];
 
     // Check required fields
     for (const [field, type] of Object.entries(expectedSchema)) {

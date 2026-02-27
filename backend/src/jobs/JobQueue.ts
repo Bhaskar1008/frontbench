@@ -129,7 +129,7 @@ export class JobQueue extends EventEmitter {
   /**
    * Register a job handler
    */
-  private handlers: Map<string, (data: any) => Promise<any>> = new Map();
+  protected handlers: Map<string, (data: any) => Promise<any>> = new Map();
 
   registerHandler(type: string, handler: (data: any) => Promise<any>): void {
     this.handlers.set(type, handler);

@@ -32,7 +32,7 @@ export class DocumentSearchTool extends Tool {
       Use this tool to find relevant information from resumes, documents, or previous analyses.
       Input should be a search query string.`,
       schema,
-    });
+    } as any);
 
     this.vectorStore = config.vectorStore;
     this.k = config.k || 5;

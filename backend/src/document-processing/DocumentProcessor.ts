@@ -41,6 +41,7 @@ export class DocumentProcessor {
     let metadata: ProcessedDocument['metadata'] = {
       filename,
       fileType: fileExtension,
+      wordCount: 0, // Will be set after processing
       processedAt: new Date(),
     };
 
@@ -66,7 +67,8 @@ export class DocumentProcessor {
           throw new Error(`Unsupported file type: ${fileExtension}`);
       }
 
-      metadata.wordCount = this.countWords(content);
+      const wordCount = this.countWords(content);
+      metadata.wordCount = wordCount;
 
       return {
         content,

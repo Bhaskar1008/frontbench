@@ -32,7 +32,12 @@ export abstract class BaseAgent {
   protected executor: AgentExecutor | null = null;
   protected llm: ChatOpenAI;
   protected tools: Tool[] = [];
-  protected config: Required<AgentConfig>;
+  protected config: {
+    modelName: string;
+    temperature: number;
+    maxIterations: number;
+    verbose: boolean;
+  };
   protected langfuseClient?: Langfuse;
   protected traceId?: string;
 
@@ -42,8 +47,6 @@ export abstract class BaseAgent {
       temperature: config.temperature ?? 0.3,
       maxIterations: config.maxIterations ?? 15,
       verbose: config.verbose ?? false,
-      langfuseClient: config.langfuseClient,
-      traceId: config.traceId,
     };
 
     this.langfuseClient = config.langfuseClient;
@@ -78,8 +81,8 @@ export abstract class BaseAgent {
     const agent = await createOpenAIFunctionsAgent({
       llm: this.llm,
       tools: this.tools,
-      prompt,
-    });
+      ...(prompt && { prompt }),
+    } as any);
 
     this.executor = new AgentExecutor({
       agent,
@@ -135,8 +138,11 @@ export abstract class BaseAgent {
       };
     } catch (error: any) {
       trace?.update({
-        level: 'ERROR',
-        statusMessage: error.message,
+        metadata: {
+          error: true,
+          errorMessage: error.message,
+          status: 'error',
+        },
       });
 
       throw error;

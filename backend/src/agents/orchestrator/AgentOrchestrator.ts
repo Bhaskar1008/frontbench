@@ -86,8 +86,11 @@ export class AgentOrchestrator {
       };
     } catch (error: any) {
       trace?.update({
-        level: 'ERROR',
-        statusMessage: error.message,
+        metadata: {
+          error: true,
+          errorMessage: error.message,
+          status: 'error',
+        },
       });
 
       throw error;

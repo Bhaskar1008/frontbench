@@ -43,7 +43,7 @@ export class ResumeAnalysisTool extends Tool {
       - Strengths and areas for improvement
       Input should be the resume text content.`,
       schema,
-    });
+    } as any);
 
     this.openai = config.openai;
   }

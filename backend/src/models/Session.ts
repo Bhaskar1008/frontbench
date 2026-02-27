@@ -26,6 +26,16 @@ export interface ISession extends Document {
     userAgent?: string;
     name?: string;
     email?: string;
+    conversationHistory?: Array<{
+      input: string;
+      output: string;
+      timestamp: Date;
+    }>;
+    preferences?: Record<string, any>;
+    userPreferences?: Record<string, any>;
+    preferencesUpdatedAt?: Date;
+    projectId?: string;
+    userId?: string;
   };
   createdAt: Date;
   updatedAt: Date;
