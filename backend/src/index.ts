@@ -288,7 +288,8 @@ app.post('/api/resume/upload', upload.single('resume'), async (req, res, next) =
 
     // Store document in Chroma vector store for RAG (if enabled)
     // Do this asynchronously after response to avoid blocking the request
-    let chromaDocumentIds: string[] = [];
+    const fileBuffer = req.file.buffer;
+    const fileName = req.file.originalname;
     const ragPromise = (async () => {
       if (process.env.ENABLE_RAG === 'true') {
         try {
@@ -310,12 +311,10 @@ app.post('/api/resume/upload', upload.single('resume'), async (req, res, next) =
           const path = await import('path');
           const tempDir = 'uploads';
           await fs.mkdir(tempDir, { recursive: true });
-          const tempFilePath = path.join(tempDir, `${sessionId}-${req.file.originalname}`);
+          const tempFilePath = path.join(tempDir, `${sessionId}-${fileName}`);
           
           // Write file buffer to disk (free memory)
-          await fs.writeFile(tempFilePath, req.file.buffer);
-          // Clear buffer reference to free memory
-          (req.file as any).buffer = null;
+          await fs.writeFile(tempFilePath, fileBuffer);
 
           try {
             // Process document
@@ -324,17 +323,17 @@ app.post('/api/resume/upload', upload.single('resume'), async (req, res, next) =
 
             // Add to vector store
             if (vectorStore.isAvailable()) {
-              chromaDocumentIds = await vectorStore.addDocuments(chunks, {
+              const documentIds = await vectorStore.addDocuments(chunks, {
                 sessionId,
                 documentType: 'resume',
-                fileName: req.file.originalname,
+                fileName: fileName,
                 uploadedAt: new Date().toISOString(),
               });
               
               ragSpan.update({
                 metadata: {
                   chunksIndexed: chunks.length,
-                  documentIds: chromaDocumentIds.length,
+                  documentIds: documentIds.length,
                   indexed: true,
                 },
               });
