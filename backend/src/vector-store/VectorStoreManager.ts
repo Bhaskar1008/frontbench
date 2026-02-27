@@ -29,6 +29,9 @@ export class VectorStoreManager {
     });
   }
 
+  private initialized: boolean = false;
+  private initializationError: Error | null = null;
+
   /**
    * Initialize the vector store
    */
@@ -37,25 +40,63 @@ export class VectorStoreManager {
       return;
     }
 
+    if (this.initialized && this.initializationError) {
+      throw this.initializationError;
+    }
+
+    const chromaUrl = process.env.CHROMA_URL;
+
+    // If no Chroma URL is set and RAG is not explicitly enabled, skip initialization
+    if (!chromaUrl && process.env.ENABLE_RAG !== 'true') {
+      console.warn('⚠️  Chroma URL not set. RAG features will be disabled.');
+      this.initialized = true;
+      return;
+    }
+
+    if (!chromaUrl) {
+      const error = new Error('CHROMA_URL environment variable is required when ENABLE_RAG=true');
+      this.initializationError = error;
+      this.initialized = true;
+      throw error;
+    }
+
     try {
       this.vectorStore = await Chroma.fromExistingCollection(
         this.embeddings,
         {
           collectionName: this.collectionName,
-          url: process.env.CHROMA_URL || 'http://localhost:8000',
+          url: chromaUrl,
         }
       );
-    } catch (error) {
-      // If collection doesn't exist, create a new one
-      this.vectorStore = await Chroma.fromDocuments(
-        [],
-        this.embeddings,
-        {
-          collectionName: this.collectionName,
-          url: process.env.CHROMA_URL || 'http://localhost:8000',
-        }
-      );
+      this.initialized = true;
+      console.log(`✅ Vector store initialized: ${chromaUrl}`);
+    } catch (error: any) {
+      try {
+        // If collection doesn't exist, create a new one
+        this.vectorStore = await Chroma.fromDocuments(
+          [],
+          this.embeddings,
+          {
+            collectionName: this.collectionName,
+            url: chromaUrl,
+          }
+        );
+        this.initialized = true;
+        console.log(`✅ Vector store created: ${chromaUrl}`);
+      } catch (createError: any) {
+        this.initializationError = createError;
+        this.initialized = true;
+        console.error(`❌ Failed to initialize vector store: ${createError.message}`);
+        throw new Error(`Vector store initialization failed: ${createError.message}`);
+      }
     }
+  }
+
+  /**
+   * Check if vector store is available
+   */
+  isAvailable(): boolean {
+    return this.vectorStore !== null && !this.initializationError;
   }
 
   /**
@@ -67,8 +108,9 @@ export class VectorStoreManager {
   ): Promise<string[]> {
     await this.initialize();
 
-    if (!this.vectorStore) {
-      throw new Error('Vector store not initialized');
+    if (!this.vectorStore || !this.isAvailable()) {
+      console.warn('⚠️  Vector store not available. Skipping document indexing.');
+      return [];
     }
 
     const documents = chunks.map((chunk) => {
@@ -98,8 +140,9 @@ export class VectorStoreManager {
   ): Promise<Document[]> {
     await this.initialize();
 
-    if (!this.vectorStore) {
-      throw new Error('Vector store not initialized');
+    if (!this.vectorStore || !this.isAvailable()) {
+      console.warn('⚠️  Vector store not available. Returning empty results.');
+      return [];
     }
 
     return this.vectorStore.similaritySearch(query, k, filter);

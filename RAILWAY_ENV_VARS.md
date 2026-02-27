@@ -93,6 +93,10 @@ LANGFUSE_SECRET_KEY=sk-lf-9633c1c1-c669-4554-9e83-f41e81868038
 LANGFUSE_PUBLIC_KEY=pk-lf-130138b2-8189-4ab1-9df2-a34f1f5eb005
 LANGFUSE_BASE_URL=https://us.cloud.langfuse.com
 NODE_ENV=production
+ENABLE_AGENTIC_AI=true
+ENABLE_RAG=false
+# CHROMA_URL=leave-empty-if-ENABLE_RAG-is-false
+# CHROMA_COLLECTION=frontbench_documents
 ```
 
 ---
