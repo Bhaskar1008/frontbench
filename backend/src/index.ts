@@ -525,54 +525,112 @@ app.post('/api/resume/upload', upload.single('resume'), async (req, res, next) =
       tokenUsage: tokenUsage.totalTokens,
     });
     
-    res.json({
+    // Limit response size - don't send full extractedText in response
+    const responseAnalysis = {
+      ...analysis,
+      // Remove large fields that aren't needed in initial response
+      extractedText: undefined, // Don't send full text, client can fetch if needed
+    };
+    
+    // Calculate response size estimate
+    const responseSize = JSON.stringify({
       success: true,
       sessionId,
-      analysis,
+      analysis: responseAnalysis,
       tokenUsage,
-      traceId: trace.id,
-      rag: {
-        enabled: process.env.ENABLE_RAG === 'true',
-        indexing: 'in_progress', // RAG indexing happens async
-      },
-    });
+    }).length;
+    
+    if (responseSize > 500000) { // 500KB limit
+      console.warn('⚠️  Response too large, truncating analysis:', responseSize);
+      // Send minimal response
+      res.json({
+        success: true,
+        sessionId,
+        analysis: {
+          name: analysis?.name,
+          email: analysis?.email,
+          currentRole: analysis?.currentRole,
+          yearsOfExperience: analysis?.yearsOfExperience,
+          // Include only essential fields
+        },
+        tokenUsage,
+        traceId: trace.id,
+        rag: {
+          enabled: process.env.ENABLE_RAG === 'true',
+          indexing: 'in_progress',
+        },
+        note: 'Full analysis available via /api/analysis/:sessionId',
+      });
+    } else {
+      res.json({
+        success: true,
+        sessionId,
+        analysis: responseAnalysis,
+        tokenUsage,
+        traceId: trace.id,
+        rag: {
+          enabled: process.env.ENABLE_RAG === 'true',
+          indexing: 'in_progress', // RAG indexing happens async
+        },
+      });
+    }
 
     // Continue RAG indexing in background (don't await)
     ragPromise.catch((error) => {
       console.error('Background RAG indexing failed:', error);
     });
   } catch (error: any) {
-    console.error('Error processing resume:', error);
+    console.error('❌ Error processing resume:', {
+      message: error.message,
+      stack: error.stack?.substring(0, 200),
+      sessionId,
+      headersSent: res.headersSent,
+    });
     
     // Ensure response hasn't been sent
     if (!res.headersSent) {
-      trace.update({
-        metadata: {
-          error: error.message,
-          stack: error.stack?.substring(0, 500), // Limit stack trace size
-        },
-      });
-      safeFlushLangfuse();
+      try {
+        trace.update({
+          metadata: {
+            error: error.message?.substring(0, 200),
+            errorType: 'unhandled_error',
+          },
+        });
+        safeFlushLangfuse();
 
-      await logAuditEvent({
-        sessionId,
-        action: 'resume-upload',
-        resource: '/api/resume/upload',
-        status: 'error',
-        ipAddress: getIpAddress(req),
-        userAgent: getUserAgent(req),
-        errorMessage: error.message?.substring(0, 500), // Limit error message size
-      });
+        await logAuditEvent({
+          sessionId,
+          action: 'resume-upload',
+          resource: '/api/resume/upload',
+          status: 'error',
+          ipAddress: getIpAddress(req),
+          userAgent: getUserAgent(req),
+          errorMessage: error.message?.substring(0, 200),
+        }).catch(() => {}); // Don't let audit logging fail
 
-      // Send error response
-      res.status(500).json({
-        success: false,
-        error: error.message || 'Internal server error',
-        sessionId,
-      });
+        // Send error response with limited size
+        const errorResponse = {
+          success: false,
+          error: error.message?.substring(0, 200) || 'Internal server error',
+          sessionId,
+        };
+        
+        res.status(500).json(errorResponse);
+        console.log('✅ Error response sent');
+      } catch (sendError: any) {
+        console.error('❌ Failed to send error response:', sendError.message);
+        // Last resort - try to send minimal response
+        if (!res.headersSent) {
+          try {
+            res.status(500).json({ success: false, error: 'Internal server error' });
+          } catch {
+            // Connection already closed, can't send response
+          }
+        }
+      }
     } else {
       // Response already sent, just log
-      console.error('Error occurred after response was sent:', error.message);
+      console.error('⚠️  Error occurred after response was sent:', error.message);
     }
   }
 });
