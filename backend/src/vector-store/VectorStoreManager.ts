@@ -44,45 +44,87 @@ export class VectorStoreManager {
       throw this.initializationError;
     }
 
+    const chromaApiKey = process.env.CHROMA_API_KEY;
+    const chromaTenant = process.env.CHROMA_TENANT;
+    const chromaDatabase = process.env.CHROMA_DATABASE;
+    const chromaHost = process.env.CHROMA_HOST;
     const chromaUrl = process.env.CHROMA_URL;
 
-    // If no Chroma URL is set and RAG is not explicitly enabled, skip initialization
-    if (!chromaUrl && process.env.ENABLE_RAG !== 'true') {
+    // Check if Chroma Cloud mode (has API key)
+    const isChromaCloud = !!chromaApiKey;
+
+    // If no Chroma URL/Cloud config is set and RAG is not explicitly enabled, skip initialization
+    if (!isChromaCloud && !chromaUrl && process.env.ENABLE_RAG !== 'true') {
       console.warn('⚠️  Chroma URL not set. RAG features will be disabled.');
       this.initialized = true;
       return;
     }
 
-    if (!chromaUrl) {
-      const error = new Error('CHROMA_URL environment variable is required when ENABLE_RAG=true');
-      this.initializationError = error;
-      this.initialized = true;
-      throw error;
+    // Validate required configuration
+    if (isChromaCloud) {
+      // Chroma Cloud mode: require API key, tenant, and database
+      if (!chromaTenant || !chromaDatabase) {
+        const error = new Error(
+          'Chroma Cloud mode requires CHROMA_API_KEY, CHROMA_TENANT, and CHROMA_DATABASE environment variables'
+        );
+        this.initializationError = error;
+        this.initialized = true;
+        throw error;
+      }
+    } else {
+      // Self-hosted mode: require CHROMA_URL
+      if (!chromaUrl) {
+        const error = new Error('CHROMA_URL environment variable is required when ENABLE_RAG=true');
+        this.initializationError = error;
+        this.initialized = true;
+        throw error;
+      }
+    }
+
+    // Build configuration object
+    const collectionName = chromaDatabase || this.collectionName;
+    const config: any = {
+      collectionName: collectionName,
+    };
+
+    let connectionInfo: string;
+    if (isChromaCloud) {
+      // Chroma Cloud configuration
+      let cloudUrl = 'https://api.trychroma.com';
+      if (chromaHost) {
+        // Handle both with and without protocol
+        cloudUrl = chromaHost.startsWith('http://') || chromaHost.startsWith('https://')
+          ? chromaHost
+          : `https://${chromaHost}`;
+      }
+      config.url = cloudUrl;
+      config.chroma_cloud_api_key = chromaApiKey;
+      config.tenant = chromaTenant;
+      config.database = chromaDatabase;
+      connectionInfo = `Chroma Cloud (${cloudUrl})`;
+    } else {
+      // Self-hosted configuration
+      config.url = chromaUrl;
+      connectionInfo = chromaUrl!;
     }
 
     try {
       this.vectorStore = await Chroma.fromExistingCollection(
         this.embeddings,
-        {
-          collectionName: this.collectionName,
-          url: chromaUrl,
-        }
+        config
       );
       this.initialized = true;
-      console.log(`✅ Vector store initialized: ${chromaUrl}`);
+      console.log(`✅ Vector store initialized: ${connectionInfo}`);
     } catch (error: any) {
       try {
         // If collection doesn't exist, create a new one
         this.vectorStore = await Chroma.fromDocuments(
           [],
           this.embeddings,
-          {
-            collectionName: this.collectionName,
-            url: chromaUrl,
-          }
+          config
         );
         this.initialized = true;
-        console.log(`✅ Vector store created: ${chromaUrl}`);
+        console.log(`✅ Vector store created: ${connectionInfo}`);
       } catch (createError: any) {
         this.initializationError = createError;
         this.initialized = true;

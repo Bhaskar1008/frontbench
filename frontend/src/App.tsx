@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
 import Header from './components/Header'
 import Home from './pages/Home'
 import Dashboard from './pages/Dashboard'
+import DeploymentStatus from './components/DeploymentStatus'
 
 function App() {
   const [, setSessionId] = useState<string | null>(null)
@@ -15,6 +16,7 @@ function App() {
           <Route path="/" element={<Home onResumeUploaded={setSessionId} />} />
           <Route path="/dashboard/:sessionId" element={<Dashboard />} />
         </Routes>
+        <DeploymentStatus />
       </div>
     </Router>
   )
