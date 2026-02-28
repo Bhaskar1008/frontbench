@@ -313,10 +313,26 @@ app.post('/api/resume/upload', upload.single('resume'), async (req, res, next) =
     if (req.file.mimetype === 'application/pdf') {
       let pdfData: any;
       try {
+        console.log('📄 Starting PDF parsing, file size:', req.file.size, 'bytes');
         const pdfBuffer = req.file.buffer;
+        
+        // Clear buffer reference to free memory immediately
+        const bufferCopy = Buffer.from(pdfBuffer);
+        (req.file as any).buffer = null;
+        
         // Use wrapper function to handle pdf-parse module issues
         const { parsePDF } = await import('./utils/pdfParser.js');
-        pdfData = await parsePDF(pdfBuffer);
+        console.log('📄 Calling parsePDF...');
+        
+        // Add timeout for PDF parsing (30 seconds)
+        const parsePromise = parsePDF(bufferCopy);
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('PDF parsing timeout')), 30000)
+        );
+        
+        pdfData = await Promise.race([parsePromise, timeoutPromise]) as any;
+        console.log('✅ PDF parsed successfully, pages:', pdfData.numpages);
+        
         extractedText = pdfData.text || '';
         
         // Limit extracted text size to prevent memory issues
@@ -332,8 +348,15 @@ app.post('/api/resume/upload', upload.single('resume'), async (req, res, next) =
             extracted: true,
           },
         });
+        
+        // Clear buffer copy to free memory
+        bufferCopy.fill(0);
       } catch (pdfError: any) {
-        console.error('Error parsing PDF:', pdfError);
+        console.error('❌ Error parsing PDF:', {
+          message: pdfError.message,
+          name: pdfError.name,
+          stack: pdfError.stack?.substring(0, 300),
+        });
         extractionSpan.end();
         trace.update({
           metadata: { error: pdfError.message, errorType: 'pdf_parse_error' },
@@ -341,6 +364,11 @@ app.post('/api/resume/upload', upload.single('resume'), async (req, res, next) =
         safeFlushLangfuse();
         
         if (!res.headersSent) {
+          // Ensure CORS headers
+          if (origin) {
+            res.header('Access-Control-Allow-Origin', origin);
+            res.header('Access-Control-Allow-Credentials', 'true');
+          }
           return res.status(500).json({
             success: false,
             error: 'Failed to parse PDF. Please ensure the file is a valid PDF.',
@@ -449,23 +477,43 @@ app.post('/api/resume/upload', upload.single('resume'), async (req, res, next) =
     let analysis: any;
     let tokenUsage: any;
     try {
-      const result = await analyzeResume(extractedText, openai, trace, sessionId);
+      console.log('🤖 Starting AI analysis, text length:', extractedText.length);
+      
+      // Add timeout for AI analysis (45 seconds)
+      const analyzePromise = analyzeResume(extractedText, openai, trace, sessionId);
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('AI analysis timeout')), 45000)
+      );
+      
+      const result = await Promise.race([analyzePromise, timeoutPromise]) as any;
       analysis = result.analysis;
       tokenUsage = result.tokenUsage;
+      console.log('✅ AI analysis completed');
     } catch (analyzeError: any) {
-      console.error('Error in analyzeResume:', analyzeError);
+      console.error('❌ Error in analyzeResume:', {
+        message: analyzeError.message,
+        name: analyzeError.name,
+        errorType: analyzeError.message?.includes('timeout') ? 'timeout' : 'analysis_failed',
+      });
       trace.update({
         metadata: {
-          error: analyzeError.message,
-          errorType: 'analysis_failed',
+          error: analyzeError.message?.substring(0, 200),
+          errorType: analyzeError.message?.includes('timeout') ? 'timeout' : 'analysis_failed',
         },
       });
       safeFlushLangfuse();
       
       if (!res.headersSent) {
+        // Ensure CORS headers
+        if (origin) {
+          res.header('Access-Control-Allow-Origin', origin);
+          res.header('Access-Control-Allow-Credentials', 'true');
+        }
         return res.status(500).json({
           success: false,
-          error: 'Failed to analyze resume. Please try again.',
+          error: analyzeError.message?.includes('timeout') 
+            ? 'Analysis timed out. Please try again with a smaller file.'
+            : 'Failed to analyze resume. Please try again.',
           sessionId,
         });
       }
