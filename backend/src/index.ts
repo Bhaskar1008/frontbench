@@ -524,8 +524,16 @@ app.post('/api/resume/upload', upload.single('resume'), async (req, res, next) =
             }));
             
             console.log('📦 Starting document chunking...');
+            console.log(`📦 Document content size: ${document?.content?.length || 0} chars`);
             const chunkStartTime = Date.now();
-            const chunks = documentProcessor.chunkDocument(document, 1000, 200);
+            
+            // Limit chunk size for very large documents to prevent memory issues
+            const contentLength = document?.content?.length || 0;
+            const chunkSize = contentLength > 100000 ? 500 : 1000; // Smaller chunks for large docs
+            const chunkOverlap = contentLength > 100000 ? 100 : 200;
+            
+            console.log(`📦 Using chunk size: ${chunkSize}, overlap: ${chunkOverlap}`);
+            const chunks = documentProcessor.chunkDocument(document, chunkSize, chunkOverlap);
             const chunkDuration = Date.now() - chunkStartTime;
             console.log(`✅ Created ${chunks.length} chunks in ${chunkDuration}ms`);
             console.log(`📊 Chunk details:`, {

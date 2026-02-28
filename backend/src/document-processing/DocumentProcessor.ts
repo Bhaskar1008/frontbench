@@ -196,6 +196,7 @@ export class DocumentProcessor {
 
   /**
    * Chunk document content using semantic chunking
+   * Optimized for memory efficiency
    */
   chunkDocument(
     document: ProcessedDocument,
@@ -204,28 +205,56 @@ export class DocumentProcessor {
   ): DocumentChunk[] {
     const chunks: DocumentChunk[] = [];
     const content = document.content;
+    
+    // Limit content size to prevent memory issues (500KB max)
+    const MAX_CONTENT_SIZE = 500000;
+    const contentToChunk = content.length > MAX_CONTENT_SIZE 
+      ? content.substring(0, MAX_CONTENT_SIZE) 
+      : content;
+    
+    if (content.length > MAX_CONTENT_SIZE) {
+      console.warn(`⚠️  Document content truncated from ${content.length} to ${MAX_CONTENT_SIZE} chars for chunking`);
+    }
+    
     let startIndex = 0;
     let chunkIndex = 0;
+    const totalChunks = Math.ceil(contentToChunk.length / (chunkSize - chunkOverlap));
 
-    while (startIndex < content.length) {
-      const endIndex = Math.min(startIndex + chunkSize, content.length);
-      const chunkContent = content.substring(startIndex, endIndex);
+    // Pre-allocate array size for better memory management
+    chunks.length = totalChunks;
 
-      chunks.push({
+    while (startIndex < contentToChunk.length) {
+      const endIndex = Math.min(startIndex + chunkSize, contentToChunk.length);
+      const chunkContent = contentToChunk.substring(startIndex, endIndex);
+
+      // Create chunk object efficiently
+      chunks[chunkIndex] = {
         content: chunkContent,
         chunkIndex,
         startChar: startIndex,
         endChar: endIndex,
         metadata: {
-          ...document.metadata,
+          filename: document.metadata.filename,
+          fileType: document.metadata.fileType,
+          pageCount: document.metadata.pageCount,
+          wordCount: document.metadata.wordCount,
+          processedAt: document.metadata.processedAt,
           chunkSize: chunkContent.length,
         },
-      });
+      };
 
       startIndex = endIndex - chunkOverlap;
       chunkIndex++;
+      
+      // Force garbage collection hint every 100 chunks
+      if (chunkIndex % 100 === 0 && global.gc) {
+        global.gc();
+      }
     }
 
+    // Trim array to actual size
+    chunks.length = chunkIndex;
+    
     return chunks;
   }
 
