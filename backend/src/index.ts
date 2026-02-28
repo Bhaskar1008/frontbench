@@ -330,6 +330,15 @@ app.post('/api/resume/upload', upload.single('resume'), async (req, res, next) =
       metadata: { operation: 'extract-text-from-pdf' },
     });
 
+    // Store document in Chroma vector store for RAG (if enabled)
+    // Create buffer copy BEFORE we clear it for PDF parsing
+    const fileName = req.file.originalname;
+    let fileBufferCopyForRAG: Buffer | null = null;
+    if (req.file.buffer && Buffer.isBuffer(req.file.buffer)) {
+      fileBufferCopyForRAG = Buffer.from(req.file.buffer);
+      console.log('✅ Buffer copied for RAG indexing, size:', fileBufferCopyForRAG.length);
+    }
+
     // Extract text from PDF
     if (req.file.mimetype === 'application/pdf') {
       let pdfData: any;
@@ -421,11 +430,18 @@ app.post('/api/resume/upload', upload.single('resume'), async (req, res, next) =
     // Store document in Chroma vector store for RAG (if enabled)
     // Do this asynchronously after response to avoid blocking the request
     const fileName = req.file.originalname;
-    // Create a copy of the buffer before it might be cleared
-    const fileBufferCopy = Buffer.from(req.file.buffer);
+    // Create a copy of the buffer IMMEDIATELY before it might be cleared
+    // Check if buffer exists and is valid
+    let fileBufferCopy: Buffer | null = null;
+    if (req.file.buffer && Buffer.isBuffer(req.file.buffer)) {
+      fileBufferCopy = Buffer.from(req.file.buffer);
+      console.log('✅ Buffer copied for RAG indexing, size:', fileBufferCopy.length);
+    } else {
+      console.warn('⚠️  File buffer is null or invalid, RAG indexing will be skipped');
+    }
     
     const ragPromise = (async () => {
-      if (process.env.ENABLE_RAG === 'true') {
+      if (process.env.ENABLE_RAG === 'true' && fileBufferCopy) {
         console.log('🔍 Starting RAG indexing for session:', sessionId);
         try {
           const ragSpan = trace.span({
@@ -451,10 +467,13 @@ app.post('/api/resume/upload', upload.single('resume'), async (req, res, next) =
           await fs.mkdir(tempDir, { recursive: true });
           const tempFilePath = path.join(tempDir, `${sessionId}-${fileName}`);
           
-          console.log('💾 Writing file to disk for processing...');
+          console.log('💾 Writing file to disk for processing, buffer size:', fileBufferCopy.length);
           // Write file buffer copy to disk
           await fs.writeFile(tempFilePath, fileBufferCopy);
           console.log('✅ File written to:', tempFilePath);
+          
+          // Clear buffer copy to free memory
+          fileBufferCopy = null as any;
 
           try {
             // Process document
@@ -513,6 +532,8 @@ app.post('/api/resume/upload', upload.single('resume'), async (req, res, next) =
           });
           // Continue with analysis even if RAG fails
         }
+      } else if (!fileBufferCopyForRAG) {
+        console.log('ℹ️  RAG indexing skipped (file buffer not available)');
       } else {
         console.log('ℹ️  RAG indexing skipped (ENABLE_RAG=false)');
       }
