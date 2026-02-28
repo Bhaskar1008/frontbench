@@ -23,10 +23,9 @@ export class TrajectoryAgent extends BaseAgent {
 
   protected registerTools(): void {
     // Document search for career path data
-    if (this.vectorStoreManager) {
-      const vectorStore = this.vectorStoreManager.getVectorStore();
+    if (this.vectorStoreManager && this.vectorStoreManager.isAvailable()) {
       const documentSearchTool = new DocumentSearchTool({
-        vectorStore,
+        vectorStoreManager: this.vectorStoreManager,
         k: 8,
       });
       this.addTool(documentSearchTool);

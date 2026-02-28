@@ -23,10 +23,9 @@ export class BenchmarkAgent extends BaseAgent {
 
   protected registerTools(): void {
     // Document search for market data
-    if (this.vectorStoreManager) {
-      const vectorStore = this.vectorStoreManager.getVectorStore();
+    if (this.vectorStoreManager && this.vectorStoreManager.isAvailable()) {
       const documentSearchTool = new DocumentSearchTool({
-        vectorStore,
+        vectorStoreManager: this.vectorStoreManager,
         k: 10,
       });
       this.addTool(documentSearchTool);
