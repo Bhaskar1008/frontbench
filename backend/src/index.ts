@@ -257,6 +257,39 @@ app.get('/api/health', async (req, res) => {
 });
 
 /**
+ * Version endpoint - returns backend version
+ */
+app.get('/api/version', async (req, res) => {
+  // Ensure CORS headers are set
+  res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  
+  try {
+    // Read package.json to get version
+    const fs = await import('fs/promises');
+    const path = await import('path');
+    const packagePath = path.join(process.cwd(), 'package.json');
+    const packageJson = JSON.parse(await fs.readFile(packagePath, 'utf-8'));
+    
+    res.json({
+      success: true,
+      version: packageJson.version || '1.0.1',
+      name: packageJson.name || 'frontbench-backend',
+      environment: process.env.NODE_ENV || 'development',
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error: any) {
+    res.json({
+      success: true,
+      version: '1.0.1', // Fallback version
+      name: 'frontbench-backend',
+      environment: process.env.NODE_ENV || 'development',
+      timestamp: new Date().toISOString(),
+    });
+  }
+});
+
+/**
  * Upload and analyze resume
  */
 app.post('/api/resume/upload', upload.single('resume'), async (req, res, next) => {
@@ -469,9 +502,14 @@ app.post('/api/resume/upload', upload.single('resume'), async (req, res, next) =
           fileBufferCopyForRAG = null;
 
           try {
-            // Process document
+            // Process document with timeout to prevent hanging
             console.log('📄 Processing document...');
-            const document = await documentProcessor.processFile(tempFilePath);
+            const processPromise = documentProcessor.processFile(tempFilePath);
+            const processTimeout = new Promise((_, reject) => 
+              setTimeout(() => reject(new Error('Document processing timeout')), 60000)
+            );
+            const document = await Promise.race([processPromise, processTimeout]) as any;
+            
             const chunks = documentProcessor.chunkDocument(document, 1000, 200);
             console.log(`📦 Created ${chunks.length} chunks from document`);
 
@@ -510,20 +548,23 @@ app.post('/api/resume/upload', upload.single('resume'), async (req, res, next) =
             await fs.unlink(tempFilePath).catch(() => {});
             console.error('❌ Failed to index document in vector store:', {
               message: ragError.message,
+              name: ragError.name,
               stack: ragError.stack?.substring(0, 300),
             });
             ragSpan.update({
               metadata: { error: ragError.message, indexed: false },
             });
+            // Don't throw - RAG failure shouldn't crash the server
           }
 
           ragSpan.end();
         } catch (ragInitError: any) {
           console.error('❌ RAG indexing initialization failed:', {
             message: ragInitError.message,
+            name: ragInitError.name,
             stack: ragInitError.stack?.substring(0, 300),
           });
-          // Continue with analysis even if RAG fails
+          // Continue with analysis even if RAG fails - don't throw
         }
       } else if (!fileBufferCopyForRAG) {
         console.log('ℹ️  RAG indexing skipped (file buffer not available)');

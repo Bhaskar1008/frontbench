@@ -9,6 +9,7 @@ import { apiClient } from '../utils/api';
 
 interface DeploymentInfo {
   version: string;
+  backendVersion: string | null;
   buildTime: string;
   environment: string;
   apiUrl: string;
@@ -18,6 +19,7 @@ interface DeploymentInfo {
 export default function DeploymentStatus() {
   const [info, setInfo] = useState<DeploymentInfo>({
     version: import.meta.env.VITE_APP_VERSION || '1.0.0',
+    backendVersion: null,
     buildTime: import.meta.env.VITE_BUILD_TIME || new Date().toISOString(),
     environment: import.meta.env.MODE || 'development',
     apiUrl: import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'Using proxy (localhost:3001)' : 'Not configured'),
@@ -27,12 +29,23 @@ export default function DeploymentStatus() {
   const [isExpanded, setIsExpanded] = useState(false);
 
   useEffect(() => {
-    // Check API connection status
+    // Check API connection status and fetch backend version
     const checkApiStatus = async () => {
       try {
         // Try to ping the health endpoint
         await apiClient.get('/api/health');
         setInfo((prev) => ({ ...prev, apiStatus: 'connected' }));
+        
+        // Fetch backend version
+        try {
+          const versionResponse = await apiClient.get('/api/version');
+          if (versionResponse.data?.version) {
+            setInfo((prev) => ({ ...prev, backendVersion: versionResponse.data.version }));
+          }
+        } catch (versionError) {
+          // Silently fail - backend version is optional
+          console.warn('Failed to fetch backend version:', versionError);
+        }
       } catch (error: any) {
         // If health check fails, check if it's a network error or just 404
         if (error.code === 'ERR_NETWORK' || error.message?.includes('Network Error')) {
@@ -131,9 +144,15 @@ export default function DeploymentStatus() {
         {isExpanded && (
           <div className="px-4 py-3 border-t border-white/10 space-y-2 text-sm">
             <div className="flex items-center justify-between">
-              <span className="text-white/60">Version:</span>
+              <span className="text-white/60">Frontend Version:</span>
               <span className="text-white font-mono">{info.version}</span>
             </div>
+            {info.backendVersion && (
+              <div className="flex items-center justify-between">
+                <span className="text-white/60">Backend Version:</span>
+                <span className="text-white font-mono">{info.backendVersion}</span>
+              </div>
+            )}
             <div className="flex items-center justify-between">
               <span className="text-white/60">Build Time:</span>
               <span className="text-white/80 text-xs">
