@@ -7,6 +7,7 @@ import { Chroma } from '@langchain/community/vectorstores/chroma';
 import { OpenAIEmbeddings } from '@langchain/openai';
 import { Document } from '@langchain/core/documents';
 import { DocumentChunk } from '../document-processing/DocumentProcessor.js';
+import { ChromaClient } from 'chromadb';
 
 export interface VectorStoreConfig {
   collectionName?: string;
@@ -188,6 +189,8 @@ export class VectorStoreManager {
 
   /**
    * Add documents to the vector store
+   * Note: For Chroma Cloud, we always recreate the connection with full config
+   * to ensure tenant/database are properly set (LangChain Chroma loses config)
    */
   async addDocuments(
     chunks: DocumentChunk[],
@@ -195,7 +198,7 @@ export class VectorStoreManager {
   ): Promise<string[]> {
     await this.initialize();
 
-    if (!this.vectorStore || !this.isAvailable()) {
+    if (!this.chromaConfig || !this.isAvailable()) {
       console.warn('⚠️  Vector store not available. Skipping document indexing.');
       return [];
     }
@@ -213,51 +216,104 @@ export class VectorStoreManager {
       });
     });
 
-    try {
-      // Try to add documents using the existing vector store
-      console.log('📤 Attempting to add documents to existing ChromaDB collection...');
-      const ids = await this.vectorStore.addDocuments(documents);
-      console.log('✅ Successfully added documents using addDocuments');
-      return ids;
-    } catch (error: any) {
-      // If adding fails (possibly due to config loss), use fromDocuments with existing + new docs
-      if ((error.message?.includes('default_tenant') || error.message?.includes('Unauthorized')) && this.chromaConfig) {
-        console.warn('⚠️  addDocuments failed, using fromDocuments with proper config...');
-        console.log('🔍 Recreating ChromaDB connection with config:', {
-          ...this.chromaConfig,
-          chroma_cloud_api_key: '[REDACTED]',
+    // For Chroma Cloud, always recreate connection with full config to ensure tenant/database are set
+    // This is a workaround for LangChain Chroma losing config when calling addDocuments
+    const isChromaCloud = !!this.chromaConfig.chroma_cloud_api_key;
+    
+    if (isChromaCloud) {
+      console.log('📤 Adding documents to Chroma Cloud...');
+      console.log('🔍 Using config:', {
+        ...this.chromaConfig,
+        chroma_cloud_api_key: '[REDACTED]',
+      });
+      
+      try {
+        // Generate embeddings for all documents first
+        console.log('🔍 Generating embeddings for documents...');
+        const texts = documents.map(doc => doc.pageContent);
+        const embeddings = await this.embeddings.embedDocuments(texts);
+        console.log(`✅ Generated ${embeddings.length} embeddings`);
+        
+        // Use Chroma client directly to ensure tenant/database config is preserved
+        // This bypasses LangChain's config loss issue
+        const { ChromaClient } = await import('chromadb');
+        
+        const chromaClient = new ChromaClient({
+          path: this.chromaConfig.url.replace('https://', '').replace('http://', ''),
+          auth: {
+            provider: 'bearer',
+            credentials: this.chromaConfig.chroma_cloud_api_key,
+          },
+          tenant: this.chromaConfig.tenant,
+          database: this.chromaConfig.database,
         });
         
-        try {
-          // Use fromDocuments which properly handles the config
-          // This will add documents to the existing collection
-          const newVectorStore = await Chroma.fromDocuments(
-            documents,
-            this.embeddings,
-            this.chromaConfig
-          );
-          
-          // Update the stored vector store instance
-          this.vectorStore = newVectorStore;
-          
-          // Generate IDs for the documents (fromDocuments doesn't return them)
-          const ids: string[] = documents.map((_, index) => 
-            `${Date.now()}-${index}-${Math.random().toString(36).substring(7)}`
-          );
-          
-          console.log('✅ Successfully added documents using fromDocuments');
-          console.log(`📊 Added ${ids.length} documents with generated IDs`);
-          return ids;
-        } catch (recreateError: any) {
-          console.error('❌ Failed to add documents using fromDocuments:', {
-            message: recreateError.message,
-            errorType: recreateError.name,
-            stack: recreateError.stack?.substring(0, 300),
-          });
-          throw recreateError;
-        }
+        console.log('🔍 ChromaClient created with:', {
+          path: this.chromaConfig.url,
+          tenant: this.chromaConfig.tenant,
+          database: this.chromaConfig.database,
+          collectionName: this.chromaConfig.collectionName,
+        });
+        
+        // Get or create collection
+        const collection = await chromaClient.getOrCreateCollection({
+          name: this.chromaConfig.collectionName,
+        });
+        
+        console.log('✅ Collection obtained:', collection.name);
+        
+        // Prepare data for Chroma
+        const ids: string[] = documents.map((_, index) => 
+          `${Date.now()}-${index}-${Math.random().toString(36).substring(7)}`
+        );
+        const metadatas = documents.map(doc => doc.metadata);
+        
+        // Add documents to Chroma
+        console.log(`📤 Adding ${ids.length} documents to Chroma collection...`);
+        await collection.add({
+          ids: ids,
+          embeddings: embeddings,
+          documents: texts,
+          metadatas: metadatas,
+        });
+        
+        console.log('✅ Successfully added documents to Chroma Cloud');
+        console.log(`📊 Added ${ids.length} documents with IDs`);
+        
+        // Recreate LangChain Chroma instance for future operations
+        this.vectorStore = await Chroma.fromExistingCollection(
+          this.embeddings,
+          this.chromaConfig
+        );
+        
+        return ids;
+      } catch (error: any) {
+        console.error('❌ Failed to add documents to Chroma Cloud:', {
+          message: error.message,
+          errorType: error.name,
+          stack: error.stack?.substring(0, 500),
+          config: {
+            ...this.chromaConfig,
+            chroma_cloud_api_key: '[REDACTED]',
+          },
+        });
+        throw error;
       }
-      throw error;
+    } else {
+      // For self-hosted Chroma, use the existing vector store
+      if (!this.vectorStore) {
+        throw new Error('Vector store not initialized');
+      }
+      
+      try {
+        console.log('📤 Adding documents to self-hosted Chroma...');
+        const ids = await this.vectorStore.addDocuments(documents);
+        console.log('✅ Successfully added documents');
+        return ids;
+      } catch (error: any) {
+        console.error('❌ Failed to add documents:', error.message);
+        throw error;
+      }
     }
   }
 
