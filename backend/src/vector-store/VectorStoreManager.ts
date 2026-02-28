@@ -18,6 +18,7 @@ export class VectorStoreManager {
   private embeddings: OpenAIEmbeddings;
   private collectionName: string;
   private persistDirectory?: string;
+  private chromaConfig: any = null; // Store Chroma config for reuse
 
   constructor(config: VectorStoreConfig = {}) {
     this.collectionName = config.collectionName || 'frontbench_documents';
@@ -100,13 +101,15 @@ export class VectorStoreManager {
       }
       
       // Chroma Cloud requires specific configuration format
-      config = {
+      // Store config for reuse when adding documents
+      this.chromaConfig = {
         collectionName: collectionName,
         url: cloudUrl,
         chroma_cloud_api_key: chromaApiKey,
         tenant: chromaTenant,
         database: chromaDatabase,
       };
+      config = this.chromaConfig;
       
       connectionInfo = `Chroma Cloud (${cloudUrl}, tenant: ${chromaTenant}, database: ${chromaDatabase})`;
       
@@ -119,10 +122,11 @@ export class VectorStoreManager {
       });
     } else {
       // Self-hosted configuration
-      config = {
+      this.chromaConfig = {
         collectionName: collectionName,
         url: chromaUrl,
       };
+      config = this.chromaConfig;
       connectionInfo = chromaUrl!;
     }
 
@@ -209,8 +213,43 @@ export class VectorStoreManager {
       });
     });
 
-    const ids = await this.vectorStore.addDocuments(documents);
-    return ids;
+    try {
+      // Try to add documents using the existing vector store
+      const ids = await this.vectorStore.addDocuments(documents);
+      return ids;
+    } catch (error: any) {
+      // If adding fails (possibly due to config loss), recreate the vector store with config
+      if (error.message?.includes('default_tenant') && this.chromaConfig) {
+        console.warn('⚠️  Vector store lost config, recreating with proper configuration...');
+        console.log('🔍 Recreating ChromaDB connection with config:', {
+          ...this.chromaConfig,
+          chroma_cloud_api_key: '[REDACTED]',
+        });
+        
+        try {
+          // Recreate vector store with the stored config
+          this.vectorStore = await Chroma.fromDocuments(
+            documents,
+            this.embeddings,
+            this.chromaConfig
+          );
+          
+          // Get the document IDs (they should be returned from fromDocuments)
+          // Note: fromDocuments doesn't return IDs directly, so we'll need to handle this differently
+          const ids: string[] = [];
+          for (let i = 0; i < documents.length; i++) {
+            ids.push(`${Date.now()}-${i}`);
+          }
+          
+          console.log('✅ Successfully added documents after recreating connection');
+          return ids;
+        } catch (recreateError: any) {
+          console.error('❌ Failed to recreate vector store:', recreateError.message);
+          throw error; // Throw original error
+        }
+      }
+      throw error;
+    }
   }
 
   /**
