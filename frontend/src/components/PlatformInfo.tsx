@@ -168,7 +168,7 @@ export default function PlatformInfo({ sessionId }: PlatformInfoProps) {
                   Processing Workflow ({platformStats.workflow.completedSteps}/{platformStats.workflow.totalSteps} completed)
                 </h4>
                 <div className="space-y-3">
-                  {platformStats.workflow.steps.map((step, index) => (
+                  {platformStats.workflow.steps.map((step) => (
                     <div key={step.step} className="flex gap-3 items-start">
                       <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center font-bold text-white ${
                         step.status === 'completed' ? 'bg-green-500' : 'bg-gray-500'
