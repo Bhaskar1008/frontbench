@@ -35,15 +35,19 @@ const PORT = process.env.PORT || 3001;
 const corsOptions = {
   origin: function (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) {
     // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) return callback(null, true);
+    if (!origin) {
+      console.log('✅ CORS: Allowing request with no origin');
+      return callback(null, true);
+    }
     
     // Allow localhost for development
-    if (origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:')) {
+    if (origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:') || origin.startsWith('https://localhost:')) {
+      console.log('✅ CORS: Allowing localhost origin:', origin);
       return callback(null, true);
     }
     
     // Allow all Netlify subdomains (including bright-dango-e501c1.netlify.app)
-    if (origin.includes('.netlify.app')) {
+    if (origin.includes('.netlify.app') || origin.endsWith('.netlify.app')) {
       console.log('✅ CORS: Allowing Netlify origin:', origin);
       return callback(null, true);
     }
@@ -62,17 +66,27 @@ const corsOptions = {
     callback(null, true);
   },
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-  exposedHeaders: ['Content-Type'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
+  exposedHeaders: ['Content-Type', 'Content-Length'],
   maxAge: 86400, // 24 hours
+  preflightContinue: false,
+  optionsSuccessStatus: 200,
 };
 
-// Apply CORS middleware
+// Apply CORS middleware BEFORE all other middleware
 app.use(cors(corsOptions));
 
-// Handle preflight OPTIONS requests explicitly
-app.options('*', cors(corsOptions));
+// Handle preflight OPTIONS requests explicitly for all routes
+app.options('*', (req, res) => {
+  console.log('🔍 OPTIONS request received:', req.headers.origin);
+  res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  res.header('Access-Control-Max-Age', '86400');
+  res.sendStatus(200);
+});
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
@@ -198,6 +212,10 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
  * Health check endpoint
  */
 app.get('/api/health', async (req, res) => {
+  // Ensure CORS headers are set
+  res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  
   const dbStatus = getConnectionStatus();
   
   // Check Chroma/Vector Store status if RAG is enabled
