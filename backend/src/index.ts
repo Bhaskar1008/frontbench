@@ -608,13 +608,16 @@ app.post('/api/resume/upload', upload.single('resume'), async (req, res, next) =
           }
 
           ragSpan.end();
+          console.log('✅ RAG indexing span ended successfully');
         } catch (ragInitError: any) {
           console.error('❌ RAG indexing initialization failed:', {
             message: ragInitError.message,
             name: ragInitError.name,
-            stack: ragInitError.stack?.substring(0, 300),
+            errorType: ragInitError.name,
+            stack: ragInitError.stack?.substring(0, 500),
           });
           // Continue with analysis even if RAG fails - don't throw
+          console.log('⚠️  RAG initialization failed, but continuing without crashing');
         }
       } else if (!fileBufferCopyForRAG) {
         console.log('ℹ️  RAG indexing skipped (file buffer not available)');
