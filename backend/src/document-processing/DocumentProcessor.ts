@@ -87,10 +87,21 @@ export class DocumentProcessor {
     filePath: string,
     metadata: ProcessedDocument['metadata']
   ): Promise<{ content: string; metadata: ProcessedDocument['metadata'] }> {
+    console.log('📄 DocumentProcessor: Reading PDF file:', filePath);
     const buffer = await fs.readFile(filePath);
+    console.log('📄 DocumentProcessor: PDF buffer read, size:', buffer.length);
+    
     // Use wrapper function to handle pdf-parse module issues
+    console.log('📄 DocumentProcessor: Importing pdfParser...');
     const { parsePDF } = await import('../utils/pdfParser.js');
+    console.log('📄 DocumentProcessor: Calling parsePDF...');
+    
+    const parseStartTime = Date.now();
     const pdfData = await parsePDF(buffer);
+    const parseDuration = Date.now() - parseStartTime;
+    
+    console.log(`✅ DocumentProcessor: PDF parsed in ${parseDuration}ms`);
+    console.log(`📄 DocumentProcessor: PDF pages: ${pdfData.numpages}, text length: ${pdfData.text?.length || 0}`);
 
     return {
       content: pdfData.text,

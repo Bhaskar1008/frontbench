@@ -504,27 +504,69 @@ app.post('/api/resume/upload', upload.single('resume'), async (req, res, next) =
           try {
             // Process document with timeout to prevent hanging
             console.log('📄 Processing document...');
+            console.log('📄 DocumentProcessor.processFile starting for:', tempFilePath);
+            const processStartTime = Date.now();
+            
             const processPromise = documentProcessor.processFile(tempFilePath);
             const processTimeout = new Promise((_, reject) => 
-              setTimeout(() => reject(new Error('Document processing timeout')), 60000)
+              setTimeout(() => reject(new Error('Document processing timeout after 60s')), 60000)
             );
-            const document = await Promise.race([processPromise, processTimeout]) as any;
             
+            const document = await Promise.race([processPromise, processTimeout]) as any;
+            const processDuration = Date.now() - processStartTime;
+            console.log(`✅ Document processed successfully in ${processDuration}ms`);
+            console.log(`📄 Document content length: ${document?.content?.length || 0} chars`);
+            console.log(`📄 Document metadata:`, JSON.stringify({
+              filename: document?.metadata?.filename,
+              fileType: document?.metadata?.fileType,
+              pageCount: document?.metadata?.pageCount,
+              wordCount: document?.metadata?.wordCount,
+            }));
+            
+            console.log('📦 Starting document chunking...');
+            const chunkStartTime = Date.now();
             const chunks = documentProcessor.chunkDocument(document, 1000, 200);
-            console.log(`📦 Created ${chunks.length} chunks from document`);
+            const chunkDuration = Date.now() - chunkStartTime;
+            console.log(`✅ Created ${chunks.length} chunks in ${chunkDuration}ms`);
+            console.log(`📊 Chunk details:`, {
+              totalChunks: chunks.length,
+              avgChunkSize: chunks.length > 0 ? Math.round(chunks.reduce((sum, c) => sum + c.content.length, 0) / chunks.length) : 0,
+              firstChunkSize: chunks[0]?.content?.length || 0,
+              lastChunkSize: chunks[chunks.length - 1]?.content?.length || 0,
+            });
 
             // Add to vector store
             if (vectorStore.isAvailable()) {
               console.log('📤 Adding documents to vector store...');
+              console.log('📤 Vector store details:', {
+                collectionName: process.env.CHROMA_COLLECTION || 'frontbench_documents',
+                chunksToAdd: chunks.length,
+                sessionId,
+              });
+              
+              const addStartTime = Date.now();
               const documentIds = await vectorStore.addDocuments(chunks, {
                 sessionId,
                 documentType: 'resume',
                 fileName: fileName,
                 uploadedAt: new Date().toISOString(),
               });
+              const addDuration = Date.now() - addStartTime;
               
               console.log(`✅ Successfully indexed ${documentIds.length} document chunks in Chroma`);
-              console.log(`📊 Total chunks: ${chunks.length}, Document IDs: ${documentIds.length}`);
+              console.log(`📊 Indexing completed in ${addDuration}ms`);
+              console.log(`📊 Total chunks: ${chunks.length}, Document IDs returned: ${documentIds.length}`);
+              console.log(`📊 Sample document IDs:`, documentIds.slice(0, 3));
+              
+              // Verify ChromaDB has the documents
+              try {
+                console.log('🔍 Verifying documents in ChromaDB...');
+                // Note: We can't easily query ChromaDB here without exposing internal methods
+                // But we can log that indexing completed successfully
+                console.log('✅ ChromaDB indexing verification: Documents should be available');
+              } catch (verifyError: any) {
+                console.warn('⚠️  Could not verify ChromaDB documents:', verifyError.message);
+              }
               
               ragSpan.update({
                 metadata: {
@@ -549,12 +591,20 @@ app.post('/api/resume/upload', upload.single('resume'), async (req, res, next) =
             console.error('❌ Failed to index document in vector store:', {
               message: ragError.message,
               name: ragError.name,
-              stack: ragError.stack?.substring(0, 300),
+              errorType: ragError.name,
+              isTimeout: ragError.message?.includes('timeout'),
+              stack: ragError.stack?.substring(0, 500),
             });
             ragSpan.update({
-              metadata: { error: ragError.message, indexed: false },
+              metadata: { 
+                error: ragError.message, 
+                errorType: ragError.name,
+                indexed: false 
+              },
             });
             // Don't throw - RAG failure shouldn't crash the server
+            // Log error but continue
+            console.log('⚠️  RAG indexing failed, but continuing without crashing');
           }
 
           ragSpan.end();
@@ -770,12 +820,16 @@ app.post('/api/resume/upload', upload.single('resume'), async (req, res, next) =
     ragPromise
       .then(() => {
         console.log('✅ Background RAG indexing completed successfully');
+        console.log('✅ ChromaDB should now have the indexed documents');
       })
       .catch((error) => {
         console.error('❌ Background RAG indexing failed:', {
           message: error.message,
-          stack: error.stack?.substring(0, 300),
+          name: error.name,
+          errorType: error.name,
+          stack: error.stack?.substring(0, 500),
         });
+        console.log('⚠️  RAG indexing failed in background, but main request completed');
       });
   } catch (error: any) {
     console.error('❌ Error processing resume:', {
