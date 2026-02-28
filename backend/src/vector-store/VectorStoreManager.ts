@@ -83,11 +83,12 @@ export class VectorStoreManager {
 
     // Build configuration object
     const collectionName = chromaDatabase || this.collectionName;
-    const config: any = {
+    
+    let connectionInfo: string;
+    let config: any = {
       collectionName: collectionName,
     };
 
-    let connectionInfo: string;
     if (isChromaCloud) {
       // Chroma Cloud configuration
       let cloudUrl = 'https://api.trychroma.com';
@@ -97,18 +98,40 @@ export class VectorStoreManager {
           ? chromaHost
           : `https://${chromaHost}`;
       }
-      config.url = cloudUrl;
-      config.chroma_cloud_api_key = chromaApiKey;
-      config.tenant = chromaTenant;
-      config.database = chromaDatabase;
-      connectionInfo = `Chroma Cloud (${cloudUrl})`;
+      
+      // Chroma Cloud requires specific configuration format
+      config = {
+        collectionName: collectionName,
+        url: cloudUrl,
+        chroma_cloud_api_key: chromaApiKey,
+        tenant: chromaTenant,
+        database: chromaDatabase,
+      };
+      
+      connectionInfo = `Chroma Cloud (${cloudUrl}, tenant: ${chromaTenant}, database: ${chromaDatabase})`;
+      
+      console.log('🔍 ChromaDB Cloud Configuration:', {
+        url: cloudUrl,
+        tenant: chromaTenant,
+        database: chromaDatabase,
+        collectionName: collectionName,
+        hasApiKey: !!chromaApiKey,
+      });
     } else {
       // Self-hosted configuration
-      config.url = chromaUrl;
+      config = {
+        collectionName: collectionName,
+        url: chromaUrl,
+      };
       connectionInfo = chromaUrl!;
     }
 
     try {
+      console.log('🔍 Attempting to connect to ChromaDB with config:', {
+        ...config,
+        chroma_cloud_api_key: config.chroma_cloud_api_key ? '[REDACTED]' : undefined,
+      });
+      
       this.vectorStore = await Chroma.fromExistingCollection(
         this.embeddings,
         config
@@ -116,8 +139,18 @@ export class VectorStoreManager {
       this.initialized = true;
       console.log(`✅ Vector store initialized: ${connectionInfo}`);
     } catch (error: any) {
+      console.error('❌ Failed to connect to existing collection:', {
+        message: error.message,
+        errorType: error.name,
+        config: {
+          ...config,
+          chroma_cloud_api_key: config.chroma_cloud_api_key ? '[REDACTED]' : undefined,
+        },
+      });
+      
       try {
         // If collection doesn't exist, create a new one
+        console.log('🔍 Attempting to create new ChromaDB collection...');
         this.vectorStore = await Chroma.fromDocuments(
           [],
           this.embeddings,
@@ -128,7 +161,15 @@ export class VectorStoreManager {
       } catch (createError: any) {
         this.initializationError = createError;
         this.initialized = true;
-        console.error(`❌ Failed to initialize vector store: ${createError.message}`);
+        console.error(`❌ Failed to create vector store:`, {
+          message: createError.message,
+          errorType: createError.name,
+          stack: createError.stack?.substring(0, 500),
+          config: {
+            ...config,
+            chroma_cloud_api_key: config.chroma_cloud_api_key ? '[REDACTED]' : undefined,
+          },
+        });
         throw new Error(`Vector store initialization failed: ${createError.message}`);
       }
     }
