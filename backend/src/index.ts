@@ -301,6 +301,27 @@ app.post('/api/resume/upload', upload.single('resume'), async (req, res, next) =
   });
 
   try {
+    // Set up response timeout handler to prevent hanging
+    const responseTimeout = setTimeout(() => {
+      if (!res.headersSent) {
+        console.error('⏱️  Response timeout - sending error');
+        if (origin) {
+          res.header('Access-Control-Allow-Origin', origin);
+          res.header('Access-Control-Allow-Credentials', 'true');
+        }
+        res.status(504).json({
+          success: false,
+          error: 'Request timeout. The file may be too large or complex.',
+          sessionId,
+        });
+      }
+    }, 55000); // 55 seconds (just under Railway's 60s limit)
+    
+    // Clear timeout when response is sent
+    res.on('finish', () => {
+      clearTimeout(responseTimeout);
+    });
+    
     let extractedText = '';
 
     // Span: PDF text extraction
@@ -664,6 +685,7 @@ app.post('/api/resume/upload', upload.single('resume'), async (req, res, next) =
     }
     
     console.log('✅ Response sent successfully');
+    clearTimeout(responseTimeout);
 
     // Continue RAG indexing in background (don't await)
     ragPromise.catch((error) => {
