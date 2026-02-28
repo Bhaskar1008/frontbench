@@ -7,7 +7,6 @@ import { Chroma } from '@langchain/community/vectorstores/chroma';
 import { OpenAIEmbeddings } from '@langchain/openai';
 import { Document } from '@langchain/core/documents';
 import { DocumentChunk } from '../document-processing/DocumentProcessor.js';
-import { ChromaClient } from 'chromadb';
 
 export interface VectorStoreConfig {
   collectionName?: string;
@@ -234,26 +233,26 @@ export class VectorStoreManager {
         const embeddings = await this.embeddings.embedDocuments(texts);
         console.log(`✅ Generated ${embeddings.length} embeddings`);
         
-        // Use Chroma client directly to ensure tenant/database config is preserved
+        // Use Chroma CloudClient directly to ensure tenant/database config is preserved
         // This bypasses LangChain's config loss issue
-        const { ChromaClient } = await import('chromadb');
+        const chromadb = await import('chromadb');
         
-        const chromaClient = new ChromaClient({
-          path: this.chromaConfig.url.replace('https://', '').replace('http://', ''),
-          auth: {
-            provider: 'bearer',
-            credentials: this.chromaConfig.chroma_cloud_api_key,
-          },
-          tenant: this.chromaConfig.tenant,
-          database: this.chromaConfig.database,
-        });
+        // Use CloudClient for Chroma Cloud (not ChromaClient)
+        const CloudClient = chromadb.CloudClient || chromadb.ChromaClient;
         
-        console.log('🔍 ChromaClient created with:', {
-          path: this.chromaConfig.url,
+        console.log('🔍 Creating Chroma CloudClient with:', {
           tenant: this.chromaConfig.tenant,
           database: this.chromaConfig.database,
           collectionName: this.chromaConfig.collectionName,
         });
+        
+        // Chroma Cloud uses CloudClient with tenant, database, and API key
+        const chromaClient = new CloudClient({
+          tenant: this.chromaConfig.tenant,
+          database: this.chromaConfig.database,
+          apiKey: this.chromaConfig.chroma_cloud_api_key,
+        });
+        
         
         // Get or create collection
         const collection = await chromaClient.getOrCreateCollection({
