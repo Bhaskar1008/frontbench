@@ -215,37 +215,46 @@ export class VectorStoreManager {
 
     try {
       // Try to add documents using the existing vector store
+      console.log('📤 Attempting to add documents to existing ChromaDB collection...');
       const ids = await this.vectorStore.addDocuments(documents);
+      console.log('✅ Successfully added documents using addDocuments');
       return ids;
     } catch (error: any) {
-      // If adding fails (possibly due to config loss), recreate the vector store with config
-      if (error.message?.includes('default_tenant') && this.chromaConfig) {
-        console.warn('⚠️  Vector store lost config, recreating with proper configuration...');
+      // If adding fails (possibly due to config loss), use fromDocuments with existing + new docs
+      if ((error.message?.includes('default_tenant') || error.message?.includes('Unauthorized')) && this.chromaConfig) {
+        console.warn('⚠️  addDocuments failed, using fromDocuments with proper config...');
         console.log('🔍 Recreating ChromaDB connection with config:', {
           ...this.chromaConfig,
           chroma_cloud_api_key: '[REDACTED]',
         });
         
         try {
-          // Recreate vector store with the stored config
-          this.vectorStore = await Chroma.fromDocuments(
+          // Use fromDocuments which properly handles the config
+          // This will add documents to the existing collection
+          const newVectorStore = await Chroma.fromDocuments(
             documents,
             this.embeddings,
             this.chromaConfig
           );
           
-          // Get the document IDs (they should be returned from fromDocuments)
-          // Note: fromDocuments doesn't return IDs directly, so we'll need to handle this differently
-          const ids: string[] = [];
-          for (let i = 0; i < documents.length; i++) {
-            ids.push(`${Date.now()}-${i}`);
-          }
+          // Update the stored vector store instance
+          this.vectorStore = newVectorStore;
           
-          console.log('✅ Successfully added documents after recreating connection');
+          // Generate IDs for the documents (fromDocuments doesn't return them)
+          const ids: string[] = documents.map((_, index) => 
+            `${Date.now()}-${index}-${Math.random().toString(36).substring(7)}`
+          );
+          
+          console.log('✅ Successfully added documents using fromDocuments');
+          console.log(`📊 Added ${ids.length} documents with generated IDs`);
           return ids;
         } catch (recreateError: any) {
-          console.error('❌ Failed to recreate vector store:', recreateError.message);
-          throw error; // Throw original error
+          console.error('❌ Failed to add documents using fromDocuments:', {
+            message: recreateError.message,
+            errorType: recreateError.name,
+            stack: recreateError.stack?.substring(0, 300),
+          });
+          throw recreateError;
         }
       }
       throw error;
