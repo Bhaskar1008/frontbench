@@ -10,8 +10,8 @@
   },
   "scripts": {
     "build": "tsc",
-    "start": "node --max-old-space-size=2048 dist/index.js",
-    "dev": "node --max-old-space-size=2048 node_modules/tsx/dist/cli.mjs src/index.ts",
+    "start": "node --max-old-space-size=4096 dist/index.js",
+    "dev": "node --max-old-space-size=4096 --expose-gc node_modules/tsx/dist/cli.mjs src/index.ts",
     "type-check": "tsc --noEmit"
   },
   "keywords": [

@@ -196,18 +196,17 @@ export class DocumentProcessor {
 
   /**
    * Chunk document content using semantic chunking
-   * Optimized for memory efficiency
+   * Optimized for memory efficiency - processes in batches
    */
   chunkDocument(
     document: ProcessedDocument,
     chunkSize: number = 1000,
     chunkOverlap: number = 200
   ): DocumentChunk[] {
-    const chunks: DocumentChunk[] = [];
     const content = document.content;
     
-    // Limit content size to prevent memory issues (500KB max)
-    const MAX_CONTENT_SIZE = 500000;
+    // Limit content size to prevent memory issues (200KB max for chunking)
+    const MAX_CONTENT_SIZE = 200000;
     const contentToChunk = content.length > MAX_CONTENT_SIZE 
       ? content.substring(0, MAX_CONTENT_SIZE) 
       : content;
@@ -216,44 +215,56 @@ export class DocumentProcessor {
       console.warn(`⚠️  Document content truncated from ${content.length} to ${MAX_CONTENT_SIZE} chars for chunking`);
     }
     
+    // Calculate total chunks needed
+    const effectiveChunkSize = chunkSize - chunkOverlap;
+    const totalChunks = Math.ceil(contentToChunk.length / effectiveChunkSize);
+    
+    // Pre-allocate array with exact size
+    const chunks: DocumentChunk[] = new Array(totalChunks);
+    
+    // Extract metadata once to avoid repeated object creation
+    const baseMetadata = {
+      filename: document.metadata.filename,
+      fileType: document.metadata.fileType,
+      pageCount: document.metadata.pageCount,
+      wordCount: document.metadata.wordCount,
+      processedAt: document.metadata.processedAt,
+    };
+
     let startIndex = 0;
     let chunkIndex = 0;
-    const totalChunks = Math.ceil(contentToChunk.length / (chunkSize - chunkOverlap));
+    const BATCH_SIZE = 50; // Process in batches to allow GC
 
-    // Pre-allocate array size for better memory management
-    chunks.length = totalChunks;
-
-    while (startIndex < contentToChunk.length) {
-      const endIndex = Math.min(startIndex + chunkSize, contentToChunk.length);
-      const chunkContent = contentToChunk.substring(startIndex, endIndex);
-
-      // Create chunk object efficiently
-      chunks[chunkIndex] = {
-        content: chunkContent,
-        chunkIndex,
-        startChar: startIndex,
-        endChar: endIndex,
-        metadata: {
-          filename: document.metadata.filename,
-          fileType: document.metadata.fileType,
-          pageCount: document.metadata.pageCount,
-          wordCount: document.metadata.wordCount,
-          processedAt: document.metadata.processedAt,
-          chunkSize: chunkContent.length,
-        },
-      };
-
-      startIndex = endIndex - chunkOverlap;
-      chunkIndex++;
+    while (startIndex < contentToChunk.length && chunkIndex < totalChunks) {
+      const batchEnd = Math.min(chunkIndex + BATCH_SIZE, totalChunks);
       
-      // Force garbage collection hint every 100 chunks
-      if (chunkIndex % 100 === 0 && global.gc) {
+      // Process a batch of chunks
+      for (let i = chunkIndex; i < batchEnd && startIndex < contentToChunk.length; i++) {
+        const endIndex = Math.min(startIndex + chunkSize, contentToChunk.length);
+        const chunkContent = contentToChunk.substring(startIndex, endIndex);
+
+        // Create minimal chunk object
+        chunks[i] = {
+          content: chunkContent,
+          chunkIndex: i,
+          startChar: startIndex,
+          endChar: endIndex,
+          metadata: {
+            ...baseMetadata,
+            chunkSize: chunkContent.length,
+          },
+        };
+
+        startIndex = endIndex - chunkOverlap;
+      }
+      
+      chunkIndex = batchEnd;
+      
+      // Force garbage collection after each batch
+      if (global.gc && chunkIndex < totalChunks) {
         global.gc();
       }
     }
-
-    // Trim array to actual size
-    chunks.length = chunkIndex;
     
     return chunks;
   }

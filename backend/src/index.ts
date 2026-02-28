@@ -525,17 +525,34 @@ app.post('/api/resume/upload', upload.single('resume'), async (req, res, next) =
             
             console.log('📦 Starting document chunking...');
             console.log(`📦 Document content size: ${document?.content?.length || 0} chars`);
+            
+            // Force garbage collection before chunking if available
+            if (global.gc) {
+              console.log('🧹 Running garbage collection before chunking...');
+              global.gc();
+            }
+            
             const chunkStartTime = Date.now();
             
             // Limit chunk size for very large documents to prevent memory issues
             const contentLength = document?.content?.length || 0;
-            const chunkSize = contentLength > 100000 ? 500 : 1000; // Smaller chunks for large docs
-            const chunkOverlap = contentLength > 100000 ? 100 : 200;
+            const chunkSize = contentLength > 50000 ? 500 : 1000; // Smaller chunks for large docs
+            const chunkOverlap = contentLength > 50000 ? 100 : 200;
             
             console.log(`📦 Using chunk size: ${chunkSize}, overlap: ${chunkOverlap}`);
+            
+            // Clear document content reference after getting length to free memory
+            const contentLengthForLog = contentLength;
+            
             const chunks = documentProcessor.chunkDocument(document, chunkSize, chunkOverlap);
             const chunkDuration = Date.now() - chunkStartTime;
             console.log(`✅ Created ${chunks.length} chunks in ${chunkDuration}ms`);
+            
+            // Force garbage collection after chunking if available
+            if (global.gc) {
+              console.log('🧹 Running garbage collection after chunking...');
+              global.gc();
+            }
             console.log(`📊 Chunk details:`, {
               totalChunks: chunks.length,
               avgChunkSize: chunks.length > 0 ? Math.round(chunks.reduce((sum, c) => sum + c.content.length, 0) / chunks.length) : 0,
