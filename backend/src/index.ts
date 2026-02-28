@@ -332,6 +332,7 @@ app.post('/api/resume/upload', upload.single('resume'), async (req, res, next) =
 
     // Store document in Chroma vector store for RAG (if enabled)
     // Create buffer copy BEFORE we clear it for PDF parsing
+    // Extract fileName early to avoid any scope issues
     const fileName = req.file.originalname;
     let fileBufferCopyForRAG: Buffer | null = null;
     if (req.file.buffer && Buffer.isBuffer(req.file.buffer)) {
