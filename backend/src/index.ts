@@ -420,10 +420,13 @@ app.post('/api/resume/upload', upload.single('resume'), async (req, res, next) =
 
     // Store document in Chroma vector store for RAG (if enabled)
     // Do this asynchronously after response to avoid blocking the request
-    const fileBuffer = req.file.buffer;
     const fileName = req.file.originalname;
+    // Create a copy of the buffer before it might be cleared
+    const fileBufferCopy = Buffer.from(req.file.buffer);
+    
     const ragPromise = (async () => {
       if (process.env.ENABLE_RAG === 'true') {
+        console.log('🔍 Starting RAG indexing for session:', sessionId);
         try {
           const ragSpan = trace.span({
             name: 'rag-document-indexing',
@@ -433,9 +436,12 @@ app.post('/api/resume/upload', upload.single('resume'), async (req, res, next) =
           const { getVectorStore } = await import('./vector-store/VectorStoreSingleton.js');
           const { DocumentProcessor } = await import('./document-processing/DocumentProcessor.js');
           
+          console.log('🔍 Getting vector store...');
           const vectorStore = await getVectorStore({
             collectionName: process.env.CHROMA_COLLECTION || 'frontbench_documents',
           });
+          console.log('✅ Vector store obtained, available:', vectorStore.isAvailable());
+          
           const documentProcessor = new DocumentProcessor();
 
           // Create a temporary file for processing (since DocumentProcessor expects file path)
@@ -445,22 +451,30 @@ app.post('/api/resume/upload', upload.single('resume'), async (req, res, next) =
           await fs.mkdir(tempDir, { recursive: true });
           const tempFilePath = path.join(tempDir, `${sessionId}-${fileName}`);
           
-          // Write file buffer to disk (free memory)
-          await fs.writeFile(tempFilePath, fileBuffer);
+          console.log('💾 Writing file to disk for processing...');
+          // Write file buffer copy to disk
+          await fs.writeFile(tempFilePath, fileBufferCopy);
+          console.log('✅ File written to:', tempFilePath);
 
           try {
             // Process document
+            console.log('📄 Processing document...');
             const document = await documentProcessor.processFile(tempFilePath);
             const chunks = documentProcessor.chunkDocument(document, 1000, 200);
+            console.log(`📦 Created ${chunks.length} chunks from document`);
 
             // Add to vector store
             if (vectorStore.isAvailable()) {
+              console.log('📤 Adding documents to vector store...');
               const documentIds = await vectorStore.addDocuments(chunks, {
                 sessionId,
                 documentType: 'resume',
                 fileName: fileName,
                 uploadedAt: new Date().toISOString(),
               });
+              
+              console.log(`✅ Successfully indexed ${documentIds.length} document chunks in Chroma`);
+              console.log(`📊 Total chunks: ${chunks.length}, Document IDs: ${documentIds.length}`);
               
               ragSpan.update({
                 metadata: {
@@ -470,6 +484,7 @@ app.post('/api/resume/upload', upload.single('resume'), async (req, res, next) =
                 },
               });
             } else {
+              console.warn('⚠️  Vector store not available, skipping indexing');
               ragSpan.update({
                 metadata: { warning: 'Vector store not available, skipping indexing' },
               });
@@ -477,10 +492,14 @@ app.post('/api/resume/upload', upload.single('resume'), async (req, res, next) =
 
             // Clean up temp file
             await fs.unlink(tempFilePath).catch(() => {});
+            console.log('🧹 Temp file cleaned up');
           } catch (ragError: any) {
             // Clean up temp file on error
             await fs.unlink(tempFilePath).catch(() => {});
-            console.warn('⚠️  Failed to index document in vector store:', ragError.message);
+            console.error('❌ Failed to index document in vector store:', {
+              message: ragError.message,
+              stack: ragError.stack?.substring(0, 300),
+            });
             ragSpan.update({
               metadata: { error: ragError.message, indexed: false },
             });
@@ -488,9 +507,14 @@ app.post('/api/resume/upload', upload.single('resume'), async (req, res, next) =
 
           ragSpan.end();
         } catch (ragInitError: any) {
-          console.warn('⚠️  RAG indexing skipped:', ragInitError.message);
+          console.error('❌ RAG indexing initialization failed:', {
+            message: ragInitError.message,
+            stack: ragInitError.stack?.substring(0, 300),
+          });
           // Continue with analysis even if RAG fails
         }
+      } else {
+        console.log('ℹ️  RAG indexing skipped (ENABLE_RAG=false)');
       }
     })();
 
@@ -688,9 +712,16 @@ app.post('/api/resume/upload', upload.single('resume'), async (req, res, next) =
     clearTimeout(responseTimeout);
 
     // Continue RAG indexing in background (don't await)
-    ragPromise.catch((error) => {
-      console.error('Background RAG indexing failed:', error);
-    });
+    ragPromise
+      .then(() => {
+        console.log('✅ Background RAG indexing completed successfully');
+      })
+      .catch((error) => {
+        console.error('❌ Background RAG indexing failed:', {
+          message: error.message,
+          stack: error.stack?.substring(0, 300),
+        });
+      });
   } catch (error: any) {
     console.error('❌ Error processing resume:', {
       message: error.message,
