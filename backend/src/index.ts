@@ -290,6 +290,178 @@ app.get('/api/version', async (req, res) => {
 });
 
 /**
+ * Platform Stats endpoint - returns real-time platform information for a session
+ */
+app.get('/api/platform-stats/:sessionId', async (req, res) => {
+  // Ensure CORS headers are set
+  res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  
+  const { sessionId } = req.params;
+  
+  try {
+    const session = await Session.findOne({ sessionId });
+    if (!session) {
+      return res.status(404).json({ 
+        success: false, 
+        error: 'Session not found' 
+      });
+    }
+
+    // Get token usage breakdown
+    const tokenUsageRecords = await TokenUsage.find({ sessionId }).sort({ createdAt: 1 });
+    
+    // Calculate workflow steps based on session data
+    const workflowSteps = [];
+    const timings: Record<string, number> = {};
+    
+    if (session.uploadedAt) {
+      workflowSteps.push({
+        step: 1,
+        name: 'File Upload',
+        status: 'completed',
+        description: `Uploaded ${session.fileName} (${(session.fileSize / 1024 / 1024).toFixed(2)} MB)`,
+        timestamp: session.uploadedAt,
+        icon: '📤',
+      });
+    }
+    
+    if (session.extractedText) {
+      workflowSteps.push({
+        step: 2,
+        name: 'PDF Text Extraction',
+        status: 'completed',
+        description: `Extracted ${session.extractedText.length.toLocaleString()} characters from PDF`,
+        timestamp: session.uploadedAt,
+        icon: '📄',
+      });
+    }
+    
+    if (session.analysis) {
+      workflowSteps.push({
+        step: 3,
+        name: 'AI Analysis',
+        status: 'completed',
+        description: `Analyzed resume: ${session.analysis.currentRole || 'Role extracted'}, ${session.analysis.yearsOfExperience || 0} years experience`,
+        timestamp: session.uploadedAt,
+        icon: '🤖',
+      });
+    }
+    
+    if (session.benchmarks) {
+      workflowSteps.push({
+        step: 4,
+        name: 'Benchmark Generation',
+        status: 'completed',
+        description: `Generated market benchmarks for ${session.benchmarks.role || 'current role'}`,
+        timestamp: session.uploadedAt,
+        icon: '📊',
+      });
+    }
+    
+    if (session.trajectory) {
+      workflowSteps.push({
+        step: 5,
+        name: 'Career Trajectory',
+        status: 'completed',
+        description: `Projected ${session.trajectory.years || 5}-year career trajectory`,
+        timestamp: session.uploadedAt,
+        icon: '🚀',
+      });
+    }
+    
+    if (session.learningPath) {
+      workflowSteps.push({
+        step: 6,
+        name: 'Learning Path',
+        status: 'completed',
+        description: `Created personalized learning path with ${session.learningPath.recommendations?.length || 0} recommendations`,
+        timestamp: session.uploadedAt,
+        icon: '📚',
+      });
+    }
+
+    // Check RAG/ChromaDB status
+    let ragStatus = {
+      enabled: process.env.ENABLE_RAG === 'true',
+      status: 'unknown' as string,
+      chunksIndexed: 0,
+      collectionName: process.env.CHROMA_COLLECTION || 'frontbench_documents',
+    };
+
+    if (process.env.ENABLE_RAG === 'true') {
+      try {
+        const { getVectorStore } = await import('./vector-store/VectorStoreSingleton.js');
+        const vectorStore = await getVectorStore({
+          collectionName: process.env.CHROMA_COLLECTION || 'frontbench_documents',
+        });
+        
+        if (vectorStore.isAvailable()) {
+          ragStatus.status = 'connected';
+          // Try to get collection info (approximate count)
+          // Note: We can't easily count documents without exposing internal methods
+          ragStatus.chunksIndexed = -1; // Indicates we can't count easily
+        } else {
+          ragStatus.status = 'disconnected';
+        }
+      } catch (error: any) {
+        ragStatus.status = 'error';
+      }
+    } else {
+      ragStatus.status = 'disabled';
+    }
+
+    // Build response
+    const stats = {
+      success: true,
+      session: {
+        sessionId: session.sessionId,
+        fileName: session.fileName,
+        fileSize: session.fileSize,
+        uploadedAt: session.uploadedAt,
+        analysisComplete: !!session.analysis,
+        benchmarksComplete: !!session.benchmarks,
+        trajectoryComplete: !!session.trajectory,
+        learningPathComplete: !!session.learningPath,
+      },
+      workflow: {
+        steps: workflowSteps,
+        totalSteps: workflowSteps.length,
+        completedSteps: workflowSteps.filter(s => s.status === 'completed').length,
+      },
+      tokenUsage: {
+        totalTokens: session.tokenUsage?.totalTokens || 0,
+        promptTokens: session.tokenUsage?.promptTokens || 0,
+        completionTokens: session.tokenUsage?.completionTokens || 0,
+        estimatedCost: session.tokenUsage?.estimatedCost || 0,
+        breakdown: tokenUsageRecords.map((record: any) => ({
+          operation: record.operation,
+          tokens: record.totalTokens,
+          cost: record.estimatedCost,
+          model: record.model || 'gpt-4o-mini',
+          createdAt: record.createdAt,
+        })),
+      },
+      rag: ragStatus,
+      database: {
+        connected: true,
+        sessionStored: true,
+        collection: process.env.DATABASE_NAME || 'frontbench-dev',
+      },
+      timestamp: new Date().toISOString(),
+    };
+
+    res.json(stats);
+  } catch (error: any) {
+    console.error('Error fetching platform stats:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to fetch platform stats',
+    });
+  }
+});
+
+/**
  * Upload and analyze resume
  */
 app.post('/api/resume/upload', upload.single('resume'), async (req, res, next) => {

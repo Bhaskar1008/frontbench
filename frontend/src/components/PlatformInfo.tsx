@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { 
   BookOpen, 
   Database, 
@@ -13,11 +13,89 @@ import {
   Users,
   Server,
   Cloud,
-  Layers
+  Layers,
+  CheckCircle2,
+  Clock,
+  Loader2
 } from 'lucide-react';
+import { apiClient } from '../utils/api';
 
-export default function PlatformInfo() {
-  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['overview']));
+interface PlatformStats {
+  session: {
+    sessionId: string;
+    fileName: string;
+    fileSize: number;
+    uploadedAt: string;
+    analysisComplete: boolean;
+    benchmarksComplete: boolean;
+    trajectoryComplete: boolean;
+    learningPathComplete: boolean;
+  };
+  workflow: {
+    steps: Array<{
+      step: number;
+      name: string;
+      status: string;
+      description: string;
+      timestamp: Date;
+      icon: string;
+    }>;
+    totalSteps: number;
+    completedSteps: number;
+  };
+  tokenUsage: {
+    totalTokens: number;
+    promptTokens: number;
+    completionTokens: number;
+    estimatedCost: number;
+    breakdown?: Array<{
+      operation: string;
+      tokens: number;
+      cost: number;
+      model: string;
+      createdAt: string;
+    }>;
+  };
+  rag: {
+    enabled: boolean;
+    status: string;
+    chunksIndexed: number;
+    collectionName: string;
+  };
+  database: {
+    connected: boolean;
+    sessionStored: boolean;
+    collection: string;
+  };
+}
+
+interface PlatformInfoProps {
+  sessionId?: string;
+}
+
+export default function PlatformInfo({ sessionId }: PlatformInfoProps) {
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['overview', 'realtime']));
+  const [platformStats, setPlatformStats] = useState<PlatformStats | null>(null);
+  const [loadingStats, setLoadingStats] = useState(false);
+
+  // Fetch real-time platform stats if sessionId is provided
+  useEffect(() => {
+    if (sessionId) {
+      setLoadingStats(true);
+      apiClient.get(`/api/platform-stats/${sessionId}`)
+        .then((response) => {
+          if (response.data.success) {
+            setPlatformStats(response.data);
+          }
+        })
+        .catch((error) => {
+          console.error('Failed to fetch platform stats:', error);
+        })
+        .finally(() => {
+          setLoadingStats(false);
+        });
+    }
+  }, [sessionId]);
 
   const toggleSection = (section: string) => {
     const newExpanded = new Set(expandedSections);
@@ -64,9 +142,136 @@ export default function PlatformInfo() {
           Frontbench Platform Architecture
         </h1>
         <p className="text-gray-300 text-lg">
-          Production-Ready Agentic AI System for Career Intelligence
+          {sessionId ? 'Real-Time Platform Information' : 'Production-Ready Agentic AI System for Career Intelligence'}
         </p>
+        {sessionId && (
+          <p className="text-blue-400 text-sm mt-2">
+            Showing real-time data for session: {sessionId.substring(0, 8)}...
+          </p>
+        )}
       </div>
+
+      {/* Real-Time Workflow Section - Only show when sessionId exists */}
+      {sessionId && (
+        <Section id="realtime" title="Real-Time Workflow Status" icon={Clock}>
+          {loadingStats ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="w-8 h-8 text-blue-400 animate-spin" />
+              <span className="ml-3 text-gray-300">Loading real-time platform data...</span>
+            </div>
+          ) : platformStats ? (
+            <div className="space-y-4">
+              {/* Workflow Steps */}
+              <div className="bg-gradient-to-r from-green-500/10 to-blue-500/10 border border-green-500/20 rounded-lg p-4">
+                <h4 className="font-semibold text-green-300 mb-4 flex items-center gap-2">
+                  <CheckCircle2 className="w-5 h-5" />
+                  Processing Workflow ({platformStats.workflow.completedSteps}/{platformStats.workflow.totalSteps} completed)
+                </h4>
+                <div className="space-y-3">
+                  {platformStats.workflow.steps.map((step, index) => (
+                    <div key={step.step} className="flex gap-3 items-start">
+                      <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center font-bold text-white ${
+                        step.status === 'completed' ? 'bg-green-500' : 'bg-gray-500'
+                      }`}>
+                        {step.status === 'completed' ? <CheckCircle2 className="w-5 h-5" /> : step.step}
+                      </div>
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-xl">{step.icon}</span>
+                          <span className="font-semibold text-white">{step.name}</span>
+                          {step.status === 'completed' && (
+                            <CheckCircle2 className="w-4 h-4 text-green-400" />
+                          )}
+                        </div>
+                        <p className="text-sm text-gray-300">{step.description}</p>
+                        <p className="text-xs text-gray-400 mt-1">
+                          {new Date(step.timestamp).toLocaleString()}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Session Information */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="bg-white/5 rounded-lg p-4 border border-white/10">
+                  <h5 className="font-semibold text-white mb-3 flex items-center gap-2">
+                    <FileText className="w-4 h-4 text-blue-400" />
+                    Session Details
+                  </h5>
+                  <ul className="text-sm space-y-2 text-gray-300">
+                    <li>• <strong>File:</strong> {platformStats.session.fileName}</li>
+                    <li>• <strong>Size:</strong> {(platformStats.session.fileSize / 1024 / 1024).toFixed(2)} MB</li>
+                    <li>• <strong>Uploaded:</strong> {new Date(platformStats.session.uploadedAt).toLocaleString()}</li>
+                    <li>• <strong>Session ID:</strong> <code className="bg-black/30 px-1 rounded text-xs">{platformStats.session.sessionId.substring(0, 16)}...</code></li>
+                  </ul>
+                </div>
+
+                <div className="bg-white/5 rounded-lg p-4 border border-white/10">
+                  <h5 className="font-semibold text-white mb-3 flex items-center gap-2">
+                    <Database className="w-4 h-4 text-green-400" />
+                    RAG & ChromaDB Status
+                  </h5>
+                  <ul className="text-sm space-y-2 text-gray-300">
+                    <li>• <strong>RAG Enabled:</strong> {platformStats.rag.enabled ? '✅ Yes' : '❌ No'}</li>
+                    <li>• <strong>Status:</strong> <span className={`${
+                      platformStats.rag.status === 'connected' ? 'text-green-400' : 
+                      platformStats.rag.status === 'error' ? 'text-red-400' : 'text-yellow-400'
+                    }`}>
+                      {platformStats.rag.status === 'connected' ? '✅ Connected' : 
+                       platformStats.rag.status === 'error' ? '❌ Error' : 
+                       platformStats.rag.status === 'disabled' ? '⚠️ Disabled' : '⏳ Checking...'}
+                    </span></li>
+                    <li>• <strong>Collection:</strong> {platformStats.rag.collectionName}</li>
+                    <li>• <strong>Database:</strong> {platformStats.database.collection}</li>
+                  </ul>
+                </div>
+              </div>
+
+              {/* Token Usage */}
+              <div className="bg-purple-500/10 border border-purple-500/20 rounded-lg p-4">
+                <h5 className="font-semibold text-purple-300 mb-3">Token Usage & Costs</h5>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div>
+                    <p className="text-xs text-gray-400">Total Tokens</p>
+                    <p className="text-white font-bold text-lg">{platformStats.tokenUsage.totalTokens.toLocaleString('en-IN')}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-400">Prompt Tokens</p>
+                    <p className="text-blue-400 font-semibold">{platformStats.tokenUsage.promptTokens.toLocaleString('en-IN')}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-400">Completion Tokens</p>
+                    <p className="text-green-400 font-semibold">{platformStats.tokenUsage.completionTokens.toLocaleString('en-IN')}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-400">Estimated Cost</p>
+                    <p className="text-yellow-400 font-bold text-lg">₹{platformStats.tokenUsage.estimatedCost.toFixed(2)}</p>
+                  </div>
+                </div>
+                {platformStats.tokenUsage.breakdown && platformStats.tokenUsage.breakdown.length > 0 && (
+                  <div className="mt-4 pt-4 border-t border-white/10">
+                    <p className="text-xs text-gray-400 mb-2">Operation Breakdown:</p>
+                    <div className="space-y-1">
+                      {platformStats.tokenUsage.breakdown.map((op, idx) => (
+                        <div key={idx} className="flex justify-between text-xs">
+                          <span className="text-gray-300">{op.operation}</span>
+                          <span className="text-white">{op.tokens.toLocaleString()} tokens (₹{op.cost.toFixed(4)})</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="text-center py-8 text-gray-400">
+              Failed to load real-time platform data
+            </div>
+          )}
+        </Section>
+      )}
 
       {/* Overview Section */}
       <Section id="overview" title="Platform Overview" icon={BookOpen}>
@@ -123,11 +328,33 @@ export default function PlatformInfo() {
               specific parts of your resume.
             </p>
             <div className="bg-black/20 rounded p-3 text-xs font-mono">
-              <div className="text-green-400">1. Upload Resume → Extract Text</div>
-              <div className="text-blue-400 ml-4">2. Chunk Text → Create Embeddings</div>
-              <div className="text-purple-400 ml-4">3. Store in Chroma Vector DB</div>
-              <div className="text-yellow-400 ml-4">4. AI Queries → Semantic Search</div>
-              <div className="text-pink-400 ml-4">5. Retrieve Relevant Chunks → Generate Answer</div>
+              {sessionId && platformStats ? (
+                <>
+                  <div className={`${platformStats.workflow.steps[0]?.status === 'completed' ? 'text-green-400' : 'text-gray-500'}`}>
+                    1. Upload Resume → Extract Text {platformStats.workflow.steps[0]?.status === 'completed' && '✅'}
+                  </div>
+                  <div className={`ml-4 ${platformStats.rag.status === 'connected' ? 'text-blue-400' : 'text-gray-500'}`}>
+                    2. Chunk Text → Create Embeddings {platformStats.rag.status === 'connected' && '✅'}
+                  </div>
+                  <div className={`ml-4 ${platformStats.rag.status === 'connected' ? 'text-purple-400' : 'text-gray-500'}`}>
+                    3. Store in Chroma Vector DB {platformStats.rag.status === 'connected' && '✅'}
+                  </div>
+                  <div className="text-yellow-400 ml-4">
+                    4. AI Queries → Semantic Search
+                  </div>
+                  <div className="text-pink-400 ml-4">
+                    5. Retrieve Relevant Chunks → Generate Answer
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="text-green-400">1. Upload Resume → Extract Text</div>
+                  <div className="text-blue-400 ml-4">2. Chunk Text → Create Embeddings</div>
+                  <div className="text-purple-400 ml-4">3. Store in Chroma Vector DB</div>
+                  <div className="text-yellow-400 ml-4">4. AI Queries → Semantic Search</div>
+                  <div className="text-pink-400 ml-4">5. Retrieve Relevant Chunks → Generate Answer</div>
+                </>
+              )}
             </div>
           </div>
 
@@ -141,7 +368,17 @@ export default function PlatformInfo() {
                 <li>• <strong>Purpose:</strong> Stores document embeddings for semantic search</li>
                 <li>• <strong>When Used:</strong> Every resume upload is indexed automatically</li>
                 <li>• <strong>Benefits:</strong> Enables AI to "remember" and reference your resume content</li>
-                <li>• <strong>Status:</strong> {import.meta.env.VITE_ENABLE_RAG === 'true' ? '✅ Enabled' : '⚠️ Check backend config'}</li>
+                <li>• <strong>Status:</strong> {
+                  sessionId && platformStats ? (
+                    <span className={platformStats.rag.status === 'connected' ? 'text-green-400' : 'text-yellow-400'}>
+                      {platformStats.rag.status === 'connected' ? '✅ Connected' : 
+                       platformStats.rag.status === 'error' ? '❌ Error' : 
+                       platformStats.rag.status === 'disabled' ? '⚠️ Disabled' : '⏳ Checking...'}
+                    </span>
+                  ) : (
+                    import.meta.env.VITE_ENABLE_RAG === 'true' ? '✅ Enabled' : '⚠️ Check backend config'
+                  )
+                }</li>
               </ul>
             </div>
 

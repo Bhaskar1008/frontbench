@@ -277,7 +277,7 @@ export default function Dashboard() {
             loading={!data.learningPath}
           />
         )}
-        {activeTab === 'info' && <PlatformInfo />}
+        {activeTab === 'info' && <PlatformInfo sessionId={sessionId || undefined} />}
       </div>
     </div>
   )
