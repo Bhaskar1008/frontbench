@@ -337,6 +337,8 @@ app.post('/api/resume/upload', upload.single('resume'), async (req, res, next) =
     if (req.file.buffer && Buffer.isBuffer(req.file.buffer)) {
       fileBufferCopyForRAG = Buffer.from(req.file.buffer);
       console.log('✅ Buffer copied for RAG indexing, size:', fileBufferCopyForRAG.length);
+    } else {
+      console.warn('⚠️  File buffer is null or invalid, RAG indexing will be skipped');
     }
 
     // Extract text from PDF
@@ -429,19 +431,9 @@ app.post('/api/resume/upload', upload.single('resume'), async (req, res, next) =
 
     // Store document in Chroma vector store for RAG (if enabled)
     // Do this asynchronously after response to avoid blocking the request
-    const fileName = req.file.originalname;
-    // Create a copy of the buffer IMMEDIATELY before it might be cleared
-    // Check if buffer exists and is valid
-    let fileBufferCopy: Buffer | null = null;
-    if (req.file.buffer && Buffer.isBuffer(req.file.buffer)) {
-      fileBufferCopy = Buffer.from(req.file.buffer);
-      console.log('✅ Buffer copied for RAG indexing, size:', fileBufferCopy.length);
-    } else {
-      console.warn('⚠️  File buffer is null or invalid, RAG indexing will be skipped');
-    }
-    
+    // Use the fileName and fileBufferCopyForRAG we created earlier
     const ragPromise = (async () => {
-      if (process.env.ENABLE_RAG === 'true' && fileBufferCopy) {
+      if (process.env.ENABLE_RAG === 'true' && fileBufferCopyForRAG) {
         console.log('🔍 Starting RAG indexing for session:', sessionId);
         try {
           const ragSpan = trace.span({
@@ -467,13 +459,13 @@ app.post('/api/resume/upload', upload.single('resume'), async (req, res, next) =
           await fs.mkdir(tempDir, { recursive: true });
           const tempFilePath = path.join(tempDir, `${sessionId}-${fileName}`);
           
-          console.log('💾 Writing file to disk for processing, buffer size:', fileBufferCopy.length);
+          console.log('💾 Writing file to disk for processing, buffer size:', fileBufferCopyForRAG.length);
           // Write file buffer copy to disk
-          await fs.writeFile(tempFilePath, fileBufferCopy);
+          await fs.writeFile(tempFilePath, fileBufferCopyForRAG);
           console.log('✅ File written to:', tempFilePath);
           
           // Clear buffer copy to free memory
-          fileBufferCopy = null as any;
+          fileBufferCopyForRAG = null;
 
           try {
             // Process document
