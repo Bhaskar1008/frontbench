@@ -260,11 +260,19 @@ app.get('/api/health', async (req, res) => {
  * Upload and analyze resume
  */
 app.post('/api/resume/upload', upload.single('resume'), async (req, res, next) => {
+  // Set CORS headers immediately
+  const origin = req.headers.origin;
+  if (origin) {
+    res.header('Access-Control-Allow-Origin', origin);
+    res.header('Access-Control-Allow-Credentials', 'true');
+  }
+  
   console.log('📤 Resume upload request received:', {
     hasFile: !!req.file,
     fileName: req.file?.originalname,
     fileSize: req.file?.size,
     mimeType: req.file?.mimetype,
+    origin: origin,
   });
   
   if (!req.file) {
@@ -543,24 +551,50 @@ app.post('/api/resume/upload', upload.single('resume'), async (req, res, next) =
       tokenUsage: tokenUsage.totalTokens,
     });
     
+    // Ensure CORS headers are set before sending response
+    if (origin) {
+      res.header('Access-Control-Allow-Origin', origin);
+      res.header('Access-Control-Allow-Credentials', 'true');
+    }
+    
     // Limit response size - don't send full extractedText in response
-    const responseAnalysis = {
-      ...analysis,
-      // Remove large fields that aren't needed in initial response
-      extractedText: undefined, // Don't send full text, client can fetch if needed
+    // Create minimal analysis object with only essential fields
+    const minimalAnalysis = {
+      name: analysis?.name,
+      email: analysis?.email,
+      currentRole: analysis?.currentRole,
+      yearsOfExperience: analysis?.yearsOfExperience,
+      skills: Array.isArray(analysis?.skills) ? analysis.skills.slice(0, 20) : analysis?.skills, // Limit skills
+      experience: Array.isArray(analysis?.experience) ? analysis.experience.slice(0, 5) : analysis?.experience, // Limit experience
+      education: analysis?.education,
+      // Don't include: extractedText, fullSkills, detailedExperience, etc.
     };
     
     // Calculate response size estimate
-    const responseSize = JSON.stringify({
+    const responseData = {
       success: true,
       sessionId,
-      analysis: responseAnalysis,
-      tokenUsage,
-    }).length;
+      analysis: minimalAnalysis,
+      tokenUsage: {
+        totalTokens: tokenUsage.totalTokens,
+        promptTokens: tokenUsage.promptTokens,
+        completionTokens: tokenUsage.completionTokens,
+        estimatedCost: tokenUsage.estimatedCost,
+      },
+      traceId: trace.id,
+      rag: {
+        enabled: process.env.ENABLE_RAG === 'true',
+        indexing: 'in_progress',
+      },
+      note: 'Full analysis available via /api/analysis/:sessionId',
+    };
     
-    if (responseSize > 500000) { // 500KB limit
-      console.warn('⚠️  Response too large, truncating analysis:', responseSize);
-      // Send minimal response
+    const responseSize = JSON.stringify(responseData).length;
+    console.log('📊 Response size:', responseSize, 'bytes');
+    
+    if (responseSize > 200000) { // 200KB limit (more conservative)
+      console.warn('⚠️  Response still large, further truncating:', responseSize);
+      // Send even more minimal response
       res.json({
         success: true,
         sessionId,
@@ -569,29 +603,19 @@ app.post('/api/resume/upload', upload.single('resume'), async (req, res, next) =
           email: analysis?.email,
           currentRole: analysis?.currentRole,
           yearsOfExperience: analysis?.yearsOfExperience,
-          // Include only essential fields
         },
-        tokenUsage,
+        tokenUsage: {
+          totalTokens: tokenUsage.totalTokens,
+          estimatedCost: tokenUsage.estimatedCost,
+        },
         traceId: trace.id,
-        rag: {
-          enabled: process.env.ENABLE_RAG === 'true',
-          indexing: 'in_progress',
-        },
         note: 'Full analysis available via /api/analysis/:sessionId',
       });
     } else {
-      res.json({
-        success: true,
-        sessionId,
-        analysis: responseAnalysis,
-        tokenUsage,
-        traceId: trace.id,
-        rag: {
-          enabled: process.env.ENABLE_RAG === 'true',
-          indexing: 'in_progress', // RAG indexing happens async
-        },
-      });
+      res.json(responseData);
     }
+    
+    console.log('✅ Response sent successfully');
 
     // Continue RAG indexing in background (don't await)
     ragPromise.catch((error) => {
@@ -604,6 +628,13 @@ app.post('/api/resume/upload', upload.single('resume'), async (req, res, next) =
       sessionId,
       headersSent: res.headersSent,
     });
+    
+    // Ensure CORS headers are set even on error
+    const origin = req.headers.origin;
+    if (origin && !res.headersSent) {
+      res.header('Access-Control-Allow-Origin', origin);
+      res.header('Access-Control-Allow-Credentials', 'true');
+    }
     
     // Ensure response hasn't been sent
     if (!res.headersSent) {
@@ -640,9 +671,14 @@ app.post('/api/resume/upload', upload.single('resume'), async (req, res, next) =
         // Last resort - try to send minimal response
         if (!res.headersSent) {
           try {
+            if (origin) {
+              res.header('Access-Control-Allow-Origin', origin);
+              res.header('Access-Control-Allow-Credentials', 'true');
+            }
             res.status(500).json({ success: false, error: 'Internal server error' });
           } catch {
             // Connection already closed, can't send response
+            console.error('❌ Connection closed, cannot send response');
           }
         }
       }
