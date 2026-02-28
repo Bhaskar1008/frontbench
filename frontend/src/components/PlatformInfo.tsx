@@ -254,8 +254,8 @@ export default function PlatformInfo({ sessionId }: PlatformInfoProps) {
                   <div className="mt-4 pt-4 border-t border-white/10">
                     <p className="text-xs text-gray-400 mb-2">Operation Breakdown:</p>
                     <div className="space-y-1">
-                      {platformStats.tokenUsage.breakdown.map((op, idx) => (
-                        <div key={idx} className="flex justify-between text-xs">
+                      {platformStats.tokenUsage.breakdown.map((op) => (
+                        <div key={op.operation} className="flex justify-between text-xs">
                           <span className="text-gray-300">{op.operation}</span>
                           <span className="text-white">{op.tokens.toLocaleString()} tokens (₹{op.cost.toFixed(4)})</span>
                         </div>

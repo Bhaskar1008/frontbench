@@ -320,7 +320,7 @@ app.get('/api/platform-stats/:sessionId', async (req, res) => {
         step: 1,
         name: 'File Upload',
         status: 'completed',
-        description: `Uploaded ${session.fileName} (${(session.fileSize / 1024 / 1024).toFixed(2)} MB)`,
+        description: `Uploaded ${session.fileName || 'file'} (${session.fileSize ? (session.fileSize / 1024 / 1024).toFixed(2) : 'N/A'} MB)`,
         timestamp: session.uploadedAt,
         icon: '📤',
       });
