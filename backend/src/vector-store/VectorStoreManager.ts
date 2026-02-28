@@ -130,6 +130,19 @@ export class VectorStoreManager {
       connectionInfo = chromaUrl!;
     }
 
+    // For Chroma Cloud, we skip LangChain initialization here
+    // because LangChain's Chroma wrapper doesn't properly handle tenant/database config
+    // We'll use CloudClient directly for all operations
+    if (isChromaCloud) {
+      console.log('🔍 Chroma Cloud mode: Skipping LangChain initialization (will use CloudClient directly)');
+      // Mark as initialized but don't create LangChain instance yet
+      // We'll use CloudClient directly for addDocuments and similaritySearch
+      this.initialized = true;
+      console.log(`✅ Vector store initialized (Cloud mode): ${connectionInfo}`);
+      return;
+    }
+
+    // For self-hosted Chroma, use LangChain wrapper
     try {
       console.log('🔍 Attempting to connect to ChromaDB with config:', {
         ...config,
@@ -181,8 +194,15 @@ export class VectorStoreManager {
 
   /**
    * Check if vector store is available
+   * For Chroma Cloud, we consider it available if we have config (even without LangChain instance)
    */
   isAvailable(): boolean {
+    // For Chroma Cloud, we don't have a LangChain vectorStore instance
+    // but we can still use CloudClient directly, so check if we have config
+    if (this.chromaConfig?.chroma_cloud_api_key) {
+      return !this.initializationError && !!this.chromaConfig;
+    }
+    // For self-hosted, require LangChain instance
     return this.vectorStore !== null && !this.initializationError;
   }
 
@@ -279,11 +299,10 @@ export class VectorStoreManager {
         console.log('✅ Successfully added documents to Chroma Cloud');
         console.log(`📊 Added ${ids.length} documents with IDs`);
         
-        // Recreate LangChain Chroma instance for future operations
-        this.vectorStore = await Chroma.fromExistingCollection(
-          this.embeddings,
-          this.chromaConfig
-        );
+        // Don't recreate LangChain instance - it loses tenant/database config
+        // We'll use CloudClient directly for similarity search as well
+        // The vectorStore will remain null for Chroma Cloud, but that's OK
+        // because we'll use CloudClient directly in similaritySearch
         
         return ids;
       } catch (error: any) {
@@ -326,12 +345,81 @@ export class VectorStoreManager {
   ): Promise<Document[]> {
     await this.initialize();
 
-    if (!this.vectorStore || !this.isAvailable()) {
+    if (!this.isAvailable()) {
       console.warn('⚠️  Vector store not available. Returning empty results.');
       return [];
     }
 
-    return this.vectorStore.similaritySearch(query, k, filter);
+    // For Chroma Cloud, use CloudClient directly
+    const isChromaCloud = !!this.chromaConfig?.chroma_cloud_api_key;
+    
+    if (isChromaCloud) {
+      try {
+        console.log('🔍 Performing similarity search using Chroma CloudClient...');
+        
+        // Generate query embedding
+        const queryEmbedding = await this.embeddings.embedQuery(query);
+        
+        // Use CloudClient directly
+        const chromadb = await import('chromadb');
+        const CloudClient = chromadb.CloudClient || chromadb.ChromaClient;
+        
+        const chromaClient = new CloudClient({
+          tenant: this.chromaConfig.tenant,
+          database: this.chromaConfig.database,
+          apiKey: this.chromaConfig.chroma_cloud_api_key,
+        });
+        
+        const collection = await chromaClient.getOrCreateCollection({
+          name: this.chromaConfig.collectionName,
+        });
+        
+        // Perform query
+        const results = await collection.query({
+          queryEmbeddings: [queryEmbedding],
+          nResults: k,
+          where: filter,
+        });
+        
+        // Convert results to Document format
+        const documents: Document[] = [];
+        if (results.ids && results.ids[0]) {
+          for (let i = 0; i < results.ids[0].length; i++) {
+            const id = results.ids[0][i];
+            const metadata = results.metadatas?.[0]?.[i] || {};
+            const pageContent = results.documents?.[0]?.[i] || '';
+            
+            documents.push(new Document({
+              pageContent,
+              metadata: {
+                ...metadata,
+                id,
+              },
+            }));
+          }
+        }
+        
+        console.log(`✅ Found ${documents.length} similar documents`);
+        return documents;
+      } catch (error: any) {
+        console.error('❌ Chroma Cloud similarity search failed:', error.message);
+        throw error;
+      }
+    }
+
+    // For self-hosted Chroma, use LangChain wrapper
+    if (!this.vectorStore) {
+      console.warn('⚠️  Vector store not available. Returning empty results.');
+      return [];
+    }
+
+    try {
+      const results = await this.vectorStore.similaritySearch(query, k, filter);
+      return results;
+    } catch (error: any) {
+      console.error('❌ Similarity search failed:', error.message);
+      throw error;
+    }
   }
 
   /**
@@ -371,8 +459,15 @@ export class VectorStoreManager {
 
   /**
    * Get vector store instance (for direct access)
+   * Note: For Chroma Cloud, this will be null as we use CloudClient directly
+   * Agents should use similaritySearch() method instead of accessing vectorStore directly
    */
-  getVectorStore(): Chroma {
+  getVectorStore(): Chroma | null {
+    // For Chroma Cloud, we don't have a LangChain instance
+    if (this.chromaConfig?.chroma_cloud_api_key) {
+      // Return null - agents should use similaritySearch() method instead
+      return null;
+    }
     if (!this.vectorStore) {
       throw new Error('Vector store not initialized. Call initialize() first.');
     }

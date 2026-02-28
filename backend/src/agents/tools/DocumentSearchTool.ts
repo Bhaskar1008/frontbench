@@ -5,10 +5,10 @@
 
 import { Tool } from '@langchain/core/tools';
 import { z } from 'zod';
-import { VectorStore } from '@langchain/core/vectorstores';
+import { VectorStoreManager } from '../../vector-store/VectorStoreManager.js';
 
 export interface DocumentSearchToolConfig {
-  vectorStore: VectorStore;
+  vectorStoreManager: VectorStoreManager;
   k?: number; // Number of results to return
 }
 
@@ -18,7 +18,7 @@ export class DocumentSearchTool extends Tool {
   Use this tool to find relevant information from resumes, documents, or previous analyses.
   Input should be a search query string.`;
 
-  private vectorStore: VectorStore;
+  private vectorStoreManager: VectorStoreManager;
   private k: number;
 
   constructor(config: DocumentSearchToolConfig) {
@@ -34,13 +34,13 @@ export class DocumentSearchTool extends Tool {
       schema,
     } as any);
 
-    this.vectorStore = config.vectorStore;
+    this.vectorStoreManager = config.vectorStoreManager;
     this.k = config.k || 5;
   }
 
   async _call(input: string): Promise<string> {
     try {
-      const results = await this.vectorStore.similaritySearch(input, this.k);
+      const results = await this.vectorStoreManager.similaritySearch(input, this.k);
 
       if (results.length === 0) {
         return 'No relevant documents found for the query.';

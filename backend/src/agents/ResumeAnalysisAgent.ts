@@ -39,10 +39,10 @@ export class ResumeAnalysisAgent extends BaseAgent {
     this.addTool(resumeTool);
 
     // Document search tool (if vector store is available)
-    if (this.vectorStoreManager) {
-      const vectorStore = this.vectorStoreManager.getVectorStore();
+    if (this.vectorStoreManager && this.vectorStoreManager.isAvailable()) {
+      // Pass vectorStoreManager instead of vectorStore to handle Chroma Cloud
       const documentSearchTool = new DocumentSearchTool({
-        vectorStore,
+        vectorStoreManager: this.vectorStoreManager,
         k: 5,
       });
       this.addTool(documentSearchTool);
