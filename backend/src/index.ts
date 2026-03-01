@@ -52,6 +52,13 @@ const corsOptions = {
       return callback(null, true);
     }
     
+    // Allow all Vercel domains (production and preview deployments)
+    // Pattern: *.vercel.app (e.g., frontbench.vercel.app, frontbench-*.vercel.app)
+    if (origin.includes('.vercel.app') || origin.endsWith('.vercel.app')) {
+      console.log('✅ CORS: Allowing Vercel origin:', origin);
+      return callback(null, true);
+    }
+    
     // Allow custom frontend URL from environment variable
     const frontendUrl = process.env.FRONTEND_URL;
     if (frontendUrl && origin === frontendUrl) {
