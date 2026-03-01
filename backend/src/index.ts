@@ -1574,11 +1574,16 @@ async function startServer() {
     await connectDatabase();
 
     // Start Express server
-    app.listen(PORT, () => {
-      console.log(`🚀 Frontbench API Server running on http://localhost:${PORT}`);
+    // Listen on 0.0.0.0 to accept connections from Railway's load balancer
+    const server = app.listen(PORT, '0.0.0.0', () => {
+      console.log(`🚀 Frontbench API Server running on http://0.0.0.0:${PORT}`);
       console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
       console.log(`💾 Database: ${process.env.DATABASE_NAME || 'frontbench-dev'}`);
+      console.log(`✅ Server is ready to accept connections`);
     });
+    
+    // Store server reference for graceful shutdown
+    (global as any).httpServer = server;
   } catch (error: any) {
     console.error('❌ Failed to start server:', error.message);
     process.exit(1);
@@ -1600,12 +1605,38 @@ process.on('uncaughtException', (error: Error) => {
 // Handle graceful shutdown
 process.on('SIGTERM', async () => {
   console.log('SIGTERM signal received: closing HTTP server');
-  process.exit(0);
+  const server = (global as any).httpServer;
+  if (server) {
+    server.close(() => {
+      console.log('✅ HTTP server closed gracefully');
+      process.exit(0);
+    });
+    // Force close after 10 seconds
+    setTimeout(() => {
+      console.log('⚠️  Forcing shutdown after timeout');
+      process.exit(0);
+    }, 10000);
+  } else {
+    process.exit(0);
+  }
 });
 
 process.on('SIGINT', async () => {
   console.log('SIGINT signal received: closing HTTP server');
-  process.exit(0);
+  const server = (global as any).httpServer;
+  if (server) {
+    server.close(() => {
+      console.log('✅ HTTP server closed gracefully');
+      process.exit(0);
+    });
+    // Force close after 10 seconds
+    setTimeout(() => {
+      console.log('⚠️  Forcing shutdown after timeout');
+      process.exit(0);
+    }, 10000);
+  } else {
+    process.exit(0);
+  }
 });
 
 // Start the server
