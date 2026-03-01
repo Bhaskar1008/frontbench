@@ -219,9 +219,18 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
  * Health check endpoint
  */
 app.get('/api/health', async (req, res) => {
-  // Ensure CORS headers are set
-  res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
+  // Set comprehensive CORS headers for browser access
+  const origin = req.headers.origin;
+  
+  // Allow all origins for health check (or use CORS middleware logic)
+  if (origin) {
+    res.header('Access-Control-Allow-Origin', origin);
+  } else {
+    res.header('Access-Control-Allow-Origin', '*');
+  }
   res.header('Access-Control-Allow-Credentials', 'true');
+  res.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin');
   
   const dbStatus = getConnectionStatus();
   
@@ -261,6 +270,21 @@ app.get('/api/health', async (req, res) => {
     },
     timestamp: new Date().toISOString(),
   });
+});
+
+// Handle OPTIONS for health endpoint explicitly
+app.options('/api/health', (req, res) => {
+  const origin = req.headers.origin;
+  if (origin) {
+    res.header('Access-Control-Allow-Origin', origin);
+  } else {
+    res.header('Access-Control-Allow-Origin', '*');
+  }
+  res.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  res.header('Access-Control-Max-Age', '86400');
+  res.sendStatus(200);
 });
 
 /**
