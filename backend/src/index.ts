@@ -218,6 +218,9 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
 /**
  * Health check endpoint
  */
+// Track if server is fully initialized
+let serverInitialized = false;
+
 app.get('/api/health', async (req, res) => {
   // Set comprehensive CORS headers for browser access
   // Health endpoint should be accessible from anywhere
@@ -246,31 +249,37 @@ app.get('/api/health', async (req, res) => {
   res.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin');
   
-  console.log('🔍 Health check requested from origin:', origin || 'none');
-  
+  // Fast health check - don't initialize ChromaDB on every check
+  // Railway health checks should be fast (< 1 second)
   const dbStatus = getConnectionStatus();
   
-  // Check Chroma/Vector Store status if RAG is enabled
+  // Quick check - don't wait for ChromaDB initialization during health checks
+  // Only check if already initialized
   let chromaStatus = 'not_configured';
   let chromaError = null;
   
   if (process.env.ENABLE_RAG === 'true') {
-    try {
-      const { getVectorStore } = await import('./vector-store/VectorStoreSingleton.js');
-      
-      // Try to initialize (this will log the status)
+    // Only check ChromaDB if server is initialized (not during startup)
+    // This makes health checks fast for Railway
+    if (serverInitialized) {
       try {
-        const vectorStore = await getVectorStore({
-          collectionName: process.env.CHROMA_COLLECTION || 'frontbench_documents',
-        });
-        chromaStatus = vectorStore.isAvailable() ? 'connected' : 'disconnected';
+        const { getVectorStore } = await import('./vector-store/VectorStoreSingleton.js');
+        try {
+          const vectorStore = await getVectorStore({
+            collectionName: process.env.CHROMA_COLLECTION || 'frontbench_documents',
+          });
+          chromaStatus = vectorStore.isAvailable() ? 'connected' : 'disconnected';
+        } catch (error: any) {
+          chromaStatus = 'error';
+          chromaError = error.message?.substring(0, 100); // Truncate long errors
+        }
       } catch (error: any) {
         chromaStatus = 'error';
-        chromaError = error.message;
+        chromaError = error.message?.substring(0, 100);
       }
-    } catch (error: any) {
-      chromaStatus = 'error';
-      chromaError = error.message;
+    } else {
+      // During startup, just report that RAG is configured
+      chromaStatus = 'initializing';
     }
   }
   
@@ -287,7 +296,6 @@ app.get('/api/health', async (req, res) => {
     timestamp: new Date().toISOString(),
   };
   
-  console.log('✅ Health check response:', JSON.stringify(healthResponse));
   res.json(healthResponse);
 });
 
@@ -1575,10 +1583,34 @@ async function startServer() {
 
     // Start Express server
     // Listen on 0.0.0.0 to accept connections from Railway's load balancer
-    const server = app.listen(PORT, '0.0.0.0', () => {
+    const server = app.listen(PORT, '0.0.0.0', async () => {
       console.log(`🚀 Frontbench API Server running on http://0.0.0.0:${PORT}`);
       console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
       console.log(`💾 Database: ${process.env.DATABASE_NAME || 'frontbench-dev'}`);
+      
+      // Initialize ChromaDB in background (don't block server startup)
+      if (process.env.ENABLE_RAG === 'true') {
+        console.log('🔍 Initializing ChromaDB vector store in background...');
+        // Initialize asynchronously without blocking
+        import('./vector-store/VectorStoreSingleton.js')
+          .then(({ getVectorStore }) => {
+            return getVectorStore({
+              collectionName: process.env.CHROMA_COLLECTION || 'frontbench_documents',
+            });
+          })
+          .then((vectorStore) => {
+            console.log('✅ ChromaDB vector store initialized successfully');
+            serverInitialized = true;
+          })
+          .catch((error: any) => {
+            console.error('⚠️  ChromaDB initialization failed (non-critical):', error.message);
+            // Don't fail server startup if ChromaDB fails
+            serverInitialized = true;
+          });
+      } else {
+        serverInitialized = true;
+      }
+      
       console.log(`✅ Server is ready to accept connections`);
     });
     
