@@ -220,17 +220,33 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
  */
 app.get('/api/health', async (req, res) => {
   // Set comprehensive CORS headers for browser access
+  // Health endpoint should be accessible from anywhere
   const origin = req.headers.origin;
   
-  // Allow all origins for health check (or use CORS middleware logic)
+  // Always allow health check endpoint - set CORS headers before any processing
   if (origin) {
-    res.header('Access-Control-Allow-Origin', origin);
+    // Check if origin should be allowed (same logic as CORS middleware)
+    const isAllowedOrigin = 
+      origin.includes('.vercel.app') || 
+      origin.includes('.netlify.app') || 
+      origin.startsWith('http://localhost:') || 
+      origin.startsWith('http://127.0.0.1:');
+    
+    if (isAllowedOrigin) {
+      res.header('Access-Control-Allow-Origin', origin);
+    } else {
+      res.header('Access-Control-Allow-Origin', '*');
+    }
   } else {
+    // No origin header (direct browser access, curl, etc.) - allow all
     res.header('Access-Control-Allow-Origin', '*');
   }
+  
   res.header('Access-Control-Allow-Credentials', 'true');
   res.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin');
+  
+  console.log('🔍 Health check requested from origin:', origin || 'none');
   
   const dbStatus = getConnectionStatus();
   
@@ -258,7 +274,7 @@ app.get('/api/health', async (req, res) => {
     }
   }
   
-  res.json({
+  const healthResponse = {
     status: 'ok',
     message: 'Frontbench API is running',
     database: dbStatus ? 'connected' : 'disconnected',
@@ -269,7 +285,10 @@ app.get('/api/health', async (req, res) => {
       configured: !!(process.env.CHROMA_API_KEY || process.env.CHROMA_URL),
     },
     timestamp: new Date().toISOString(),
-  });
+  };
+  
+  console.log('✅ Health check response:', JSON.stringify(healthResponse));
+  res.json(healthResponse);
 });
 
 // Handle OPTIONS for health endpoint explicitly
