@@ -19,8 +19,11 @@ import { analyzeResume } from './services/resumeAnalyzer.js';
 import { generateBenchmarks } from './services/benchmarkService.js';
 import { generateCareerTrajectory } from './services/trajectoryService.js';
 import { generateLearningPath } from './services/learningPathService.js';
+import { getResumeImprovementSuggestions } from './services/resumeImprovementService.js';
 import { logAuditEvent, getIpAddress, getUserAgent } from './utils/auditLogger.js';
 import agentRoutes from './routes/agentRoutes.js';
+import path from 'path';
+import fs from 'fs';
 
 dotenv.config();
 
@@ -133,7 +136,7 @@ app.use((req, res, next) => {
   next();
 });
 
-// Configure multer for file uploads
+// Configure multer for resume file uploads
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
@@ -148,6 +151,23 @@ const upload = multer({
       cb(null, true);
     } else {
       cb(new Error('Only PDF and Word documents are allowed'));
+    }
+  },
+});
+
+// Profile picture upload: use memory then write with correct sessionId (multer filename runs before body is fully parsed)
+const profileUploadDir = path.join(process.cwd(), 'uploads', 'profile');
+try {
+  fs.mkdirSync(profileUploadDir, { recursive: true });
+} catch (_) {}
+const profilePictureUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 2 * 1024 * 1024 }, // 2MB
+  fileFilter: (_req, file, cb) => {
+    if (file.mimetype === 'image/jpeg' || file.mimetype === 'image/png' || file.mimetype === 'image/webp') {
+      cb(null, true);
+    } else {
+      cb(new Error('Only JPEG, PNG, or WebP images are allowed'));
     }
   },
 });
@@ -516,6 +536,173 @@ app.get('/api/platform-stats/:sessionId', async (req, res) => {
       success: false,
       error: error.message || 'Failed to fetch platform stats',
     });
+  }
+});
+
+/**
+ * Get AI resume improvement suggestions
+ */
+app.post('/api/resume/improvement-suggestions', async (req, res) => {
+  const origin = req.headers.origin;
+  if (origin) {
+    res.header('Access-Control-Allow-Origin', origin);
+    res.header('Access-Control-Allow-Credentials', 'true');
+  }
+  const { sessionId } = req.body || {};
+  if (!sessionId) {
+    return res.status(400).json({ success: false, error: 'sessionId is required' });
+  }
+  try {
+    const session = await Session.findOne({ sessionId });
+    if (!session) {
+      return res.status(404).json({ success: false, error: 'Session not found' });
+    }
+    if (!session.analysis) {
+      return res.status(400).json({ success: false, error: 'Resume analysis not found. Upload and analyze first.' });
+    }
+    const result = await getResumeImprovementSuggestions(
+      session.analysis,
+      session.benchmarks || null,
+      openai,
+      sessionId,
+      null
+    );
+    session.resumeImprovementSuggestions = result.suggestions;
+    await session.save();
+    res.json({
+      success: true,
+      suggestions: result.suggestions,
+      tokenUsage: result.tokenUsage,
+    });
+  } catch (error: any) {
+    console.error('Resume improvement suggestions error:', error);
+    res.status(500).json({ success: false, error: error.message || 'Failed to get suggestions' });
+  }
+});
+
+/**
+ * Upload profile picture for resume
+ */
+app.post('/api/resume/profile-picture', profilePictureUpload.single('profilePicture'), async (req, res) => {
+  const origin = req.headers.origin;
+  if (origin) {
+    res.header('Access-Control-Allow-Origin', origin);
+    res.header('Access-Control-Allow-Credentials', 'true');
+  }
+  const sessionId = (req.body?.sessionId || req.query?.sessionId) as string;
+  if (!sessionId) {
+    return res.status(400).json({ success: false, error: 'sessionId is required' });
+  }
+  if (!req.file || !(req.file as any).buffer) {
+    return res.status(400).json({ success: false, error: 'No profile picture file uploaded' });
+  }
+  try {
+    const session = await Session.findOne({ sessionId });
+    if (!session) {
+      return res.status(404).json({ success: false, error: 'Session not found' });
+    }
+    const ext = req.file.mimetype === 'image/png' ? '.png' : '.jpg';
+    const filename = `profile-${sessionId}${ext}`;
+    const filePath = path.join(profileUploadDir, filename);
+    fs.writeFileSync(filePath, (req.file as any).buffer);
+    const relativePath = `/api/resume/profile-picture/${sessionId}`;
+    session.profilePictureUrl = relativePath;
+    await session.save();
+    res.json({
+      success: true,
+      profilePictureUrl: relativePath,
+      message: 'Profile picture uploaded successfully',
+    });
+  } catch (error: any) {
+    console.error('Profile picture upload error:', error);
+    res.status(500).json({ success: false, error: error.message || 'Upload failed' });
+  }
+});
+
+/**
+ * Serve uploaded profile picture
+ */
+app.get('/api/resume/profile-picture/:sessionId', async (req, res) => {
+  const { sessionId } = req.params;
+  const tryPaths = [
+    path.join(profileUploadDir, `profile-${sessionId}.jpg`),
+    path.join(profileUploadDir, `profile-${sessionId}.png`),
+  ];
+  let filePath: string | null = null;
+  for (const p of tryPaths) {
+    if (fs.existsSync(p)) {
+      filePath = p;
+      break;
+    }
+  }
+  if (!filePath) {
+    return res.status(404).send('Not found');
+  }
+  res.setHeader('Cache-Control', 'public, max-age=86400');
+  res.sendFile(filePath);
+});
+
+/**
+ * Get resume download data (analysis + theme + profile picture URL for frontend PDF generation)
+ */
+app.get('/api/resume/download-data', async (req, res) => {
+  const origin = req.headers.origin;
+  if (origin) {
+    res.header('Access-Control-Allow-Origin', origin);
+    res.header('Access-Control-Allow-Credentials', 'true');
+  }
+  const sessionId = req.query.sessionId as string;
+  const theme = (req.query.theme as string) || 'modern';
+  if (!sessionId) {
+    return res.status(400).json({ success: false, error: 'sessionId is required' });
+  }
+  try {
+    const session = await Session.findOne({ sessionId });
+    if (!session) {
+      return res.status(404).json({ success: false, error: 'Session not found' });
+    }
+    if (!session.analysis) {
+      return res.status(400).json({ success: false, error: 'Resume analysis not found' });
+    }
+    const baseUrl = `${req.protocol}://${req.get('host')}`;
+    res.json({
+      success: true,
+      analysis: session.analysis,
+      theme,
+      profilePictureUrl: session.profilePictureUrl ? `${baseUrl}${session.profilePictureUrl}` : null,
+      appliedSuggestions: session.appliedSuggestions || [],
+      selectedResumeTheme: session.selectedResumeTheme || theme,
+    });
+  } catch (error: any) {
+    console.error('Resume download data error:', error);
+    res.status(500).json({ success: false, error: error.message || 'Failed to get download data' });
+  }
+});
+
+/**
+ * Save selected theme and applied suggestions
+ */
+app.post('/api/resume/save-preferences', async (req, res) => {
+  const origin = req.headers.origin;
+  if (origin) {
+    res.header('Access-Control-Allow-Origin', origin);
+    res.header('Access-Control-Allow-Credentials', 'true');
+  }
+  const { sessionId, theme, appliedSuggestions } = req.body || {};
+  if (!sessionId) {
+    return res.status(400).json({ success: false, error: 'sessionId is required' });
+  }
+  try {
+    const session = await Session.findOne({ sessionId });
+    if (!session) {
+      return res.status(404).json({ success: false, error: 'Session not found' });
+    }
+    if (theme) session.selectedResumeTheme = theme;
+    if (Array.isArray(appliedSuggestions)) session.appliedSuggestions = appliedSuggestions;
+    await session.save();
+    res.json({ success: true, message: 'Preferences saved' });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message || 'Failed to save' });
   }
 });
 
@@ -1495,6 +1682,9 @@ app.get('/api/analysis/:sessionId', async (req, res, next) => {
         benchmarks: session.benchmarks,
         trajectory: session.trajectory,
         learningPath: session.learningPath,
+        profilePictureUrl: session.profilePictureUrl || null,
+        resumeImprovementSuggestions: session.resumeImprovementSuggestions || null,
+        selectedResumeTheme: session.selectedResumeTheme || 'modern',
         tokenUsage: {
           totalTokens: session.tokenUsage?.totalTokens || 0,
           promptTokens: session.tokenUsage?.promptTokens || 0,

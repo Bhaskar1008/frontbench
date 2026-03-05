@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom'
 import { apiClient } from '../utils/api'
 import { Loader2 } from 'lucide-react'
 import ResumeAnalysis from '../components/ResumeAnalysis'
+import ResumeImprove from '../components/ResumeImprove'
 import Benchmarks from '../components/Benchmarks'
 import CareerTrajectory from '../components/CareerTrajectory'
 import LearningPath from '../components/LearningPath'
@@ -13,6 +14,9 @@ interface AnalysisData {
   benchmarks?: any
   trajectory?: any
   learningPath?: any
+  profilePictureUrl?: string | null
+  resumeImprovementSuggestions?: any
+  selectedResumeTheme?: string
   tokenUsage?: {
     totalTokens: number
     promptTokens?: number
@@ -33,7 +37,7 @@ export default function Dashboard() {
   const [data, setData] = useState<AnalysisData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<'analysis' | 'benchmarks' | 'trajectory' | 'learning' | 'info'>('info')
+  const [activeTab, setActiveTab] = useState<'analysis' | 'improve' | 'benchmarks' | 'trajectory' | 'learning' | 'info'>('info')
 
   useEffect(() => {
     if (!sessionId) {
@@ -57,6 +61,9 @@ export default function Dashboard() {
           trajectory: responseData.trajectory,
           learningPath: responseData.learningPath,
           tokenUsage: responseData.tokenUsage,
+          profilePictureUrl: responseData.profilePictureUrl ?? null,
+          resumeImprovementSuggestions: responseData.resumeImprovementSuggestions ?? null,
+          selectedResumeTheme: responseData.selectedResumeTheme ?? 'modern',
         })
         setLoading(false)
 
@@ -233,6 +240,7 @@ export default function Dashboard() {
             {[
               { id: 'info', label: 'Platform Info' },
               { id: 'analysis', label: 'Resume Analysis' },
+              { id: 'improve', label: 'Resume Improve' },
               { id: 'benchmarks', label: 'Benchmarks' },
               { id: 'trajectory', label: 'Career Trajectory' },
               { id: 'learning', label: 'Learning Path' },
@@ -256,6 +264,16 @@ export default function Dashboard() {
       {/* Content */}
       <div className="mt-8">
         {activeTab === 'analysis' && <ResumeAnalysis analysis={data.analysis} />}
+        {activeTab === 'improve' && (
+          <ResumeImprove
+            sessionId={sessionId!}
+            analysis={data.analysis}
+            benchmarks={data.benchmarks}
+            profilePictureUrl={data.profilePictureUrl}
+            initialSuggestions={data.resumeImprovementSuggestions}
+            initialTheme={data.selectedResumeTheme}
+          />
+        )}
         {activeTab === 'benchmarks' && (
           <Benchmarks
             benchmarks={data.benchmarks}

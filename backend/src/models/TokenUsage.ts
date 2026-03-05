@@ -7,7 +7,7 @@ import mongoose, { Schema, Document } from 'mongoose';
 
 export interface ITokenUsage {
   sessionId: string;
-  operation: 'resume-analysis' | 'benchmarks' | 'trajectory' | 'learning-path';
+  operation: 'resume-analysis' | 'benchmarks' | 'trajectory' | 'learning-path' | 'resume-improvement';
   modelName: string;
   promptTokens: number;
   completionTokens: number;
@@ -32,7 +32,7 @@ const TokenUsageSchema = new Schema<ITokenUsage>(
     operation: {
       type: String,
       required: true,
-      enum: ['resume-analysis', 'benchmarks', 'trajectory', 'learning-path'],
+      /* Allow any operation name so new features (e.g. resume-improvement) work without schema change */
     },
     modelName: {
       type: String,

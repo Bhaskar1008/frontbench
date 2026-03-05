@@ -31,17 +31,27 @@ export const exportToPDF = async (
     loadingMsg.textContent = 'Generating PDF...'
     document.body.appendChild(loadingMsg)
 
-    // Create canvas from HTML element
+    // Create canvas from HTML element – white background so PDF matches resume preview (white card)
     const canvas = await html2canvas(element, {
       scale: 2,
       useCORS: true,
       logging: false,
-      backgroundColor: '#0f172a', // Match dark background
-      onclone: (clonedDoc) => {
-        // Ensure all styles are applied in cloned document
-        const clonedElement = clonedDoc.getElementById(elementId)
-        if (clonedElement) {
-          clonedElement.style.backgroundColor = '#0f172a'
+      backgroundColor: '#ffffff',
+      onclone: (clonedDoc, clonedElement) => {
+        const el = (clonedDoc.getElementById && clonedDoc.getElementById(elementId)) || clonedElement
+        if (el && el instanceof HTMLElement) {
+          el.style.backgroundColor = '#ffffff'
+          el.style.color = '#111827'
+          // Ensure all text inside is dark on white for print
+          el.querySelectorAll('p, span, li, h1, h2, h3, h4, div').forEach((node) => {
+            const htmlEl = node as HTMLElement
+            if (htmlEl && htmlEl.style) {
+              htmlEl.style.color = '#111827'
+              if (htmlEl.style.backgroundColor && htmlEl.style.backgroundColor !== 'rgba(0, 0, 0, 0)') {
+                htmlEl.style.backgroundColor = '#f3f4f6'
+              }
+            }
+          })
         }
       },
     })
@@ -55,28 +65,11 @@ export const exportToPDF = async (
     const pdf = new jsPDF('p', 'mm', 'a4')
     let position = 0
 
-    // Add title page
-    pdf.setFontSize(20)
-    pdf.setTextColor(59, 130, 246) // Blue color
-    pdf.text(title, 105, 20, { align: 'center' })
-    pdf.setFontSize(12)
-    pdf.setTextColor(100, 100, 100)
-    pdf.text(
-      `Generated on ${new Date().toLocaleDateString('en-IN', {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-      })}`,
-      105,
-      30,
-      { align: 'center' }
-    )
-
-    // Add content
-    pdf.addImage(imgData, 'PNG', 0, 40, imgWidth, imgHeight)
-    heightLeft -= pageHeight - 40
+    // Resume content with white background (no separate title page)
+    pdf.setFillColor(255, 255, 255)
+    pdf.rect(0, 0, 210, 297, 'F')
+    pdf.addImage(imgData, 'PNG', 0, 10, imgWidth, imgHeight)
+    heightLeft -= pageHeight - 10
 
     while (heightLeft >= 0) {
       position = heightLeft - imgHeight

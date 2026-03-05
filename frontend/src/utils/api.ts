@@ -36,12 +36,9 @@ export const apiClient = axios.create({
   },
 });
 
-// For file uploads
+// For file uploads - do not set Content-Type so axios sets multipart/form-data with boundary
 export const uploadClient = axios.create({
   baseURL: API_BASE_URL,
-  headers: {
-    'Content-Type': 'multipart/form-data',
-  },
 });
 
 export default apiClient;

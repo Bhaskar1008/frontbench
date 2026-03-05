@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: frontbench-backend
+    env: node
+    region: singapore
+    plan: free
+    buildCommand: cd backend && npm install && npm run build
+    startCommand: cd backend && node --max-old-space-size=4096 --expose-gc dist/index.js
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      # Add your environment variables in Render dashboard:
+      # - MONGODB_URI
+      # - OPENAI_API_KEY
+      # - CHROMA_API_KEY
+      # - CHROMA_TENANT
+      # - CHROMA_DATABASE
+      # - CHROMA_HOST
+      # - ENABLE_RAG
+      # - ENABLE_AGENTIC_AI
+      # - LANGFUSE_SECRET_KEY
+      # - LANGFUSE_PUBLIC_KEY
+      # - LANGFUSE_HOST
+      # - DATABASE_NAME

@@ -37,6 +37,10 @@ export interface ISession extends Document {
     projectId?: string;
     userId?: string;
   };
+  profilePictureUrl?: string;
+  resumeImprovementSuggestions?: any;
+  selectedResumeTheme?: string;
+  appliedSuggestions?: string[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -81,6 +85,10 @@ const SessionSchema = new Schema<ISession>(
       name: String,
       email: String,
     },
+    profilePictureUrl: String,
+    resumeImprovementSuggestions: Schema.Types.Mixed,
+    selectedResumeTheme: String,
+    appliedSuggestions: [String],
   },
   {
     timestamps: true,

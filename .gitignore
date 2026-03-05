@@ -12,6 +12,9 @@ yarn.lock
 # Build outputs
 dist/
 build/
+
+# User uploads (profile pictures, etc.)
+backend/uploads/
 *.log
 
 # IDE
