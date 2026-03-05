@@ -1,7 +1,7 @@
 {
   "name": "frontbench-frontend",
   "version": "1.0.0",
-  "description": "Frontend for Frontbench - Career trajectory and learning path platform",
+  "description": "Frontbench Frontend - AI-powered career optimization: resume analysis, benchmarking, trajectory, learning path, and resume improvement with themes and PDF/DOC export",
   "type": "module",
   "scripts": {
     "dev": "vite",

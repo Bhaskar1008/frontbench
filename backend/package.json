@@ -1,7 +1,7 @@
 {
   "name": "frontbench-backend",
   "version": "1.0.1",
-  "description": "Backend API for Frontbench - Career trajectory and learning path platform",
+  "description": "Frontbench Backend API - Resume analysis, career benchmarking, trajectory, learning path, and AI resume improvement with profile upload and suggestions",
   "main": "dist/index.js",
   "type": "module",
   "engines": {
