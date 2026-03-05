@@ -4,7 +4,7 @@ import html2canvas from 'html2canvas'
 export const exportToPDF = async (
   elementId: string,
   filename: string,
-  title: string
+  _title: string
 ) => {
   const element = document.getElementById(elementId)
   if (!element) {
